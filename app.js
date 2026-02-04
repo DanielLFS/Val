@@ -9,6 +9,8 @@
   const $ = (id) => document.getElementById(id);
 
   const scrollRootEl = $("scrollRoot");
+  const scrollyRootEl = $("scrollyRoot");
+  const floatLayerEl = $("floatLayer");
   const singleCardEl = $("singleCard");
 
   // Single-card elements
@@ -30,6 +32,8 @@
   hintEl.textContent = cfg.hintText || "";
 
   const scenesById = new Map(cfg.scenes.map((s) => [s.id, s]));
+
+  const pageId = (document.body?.dataset?.page || "").toLowerCase();
 
   function setBodyParagraphs(lines) {
     bodyEl.innerHTML = "";
@@ -270,7 +274,9 @@
     // Hide single card and render scroll stack
     singleCardEl.hidden = true;
     scrollRootEl.hidden = false;
-    scrollRootEl.innerHTML = "";
+    // Keep float/scrolly containers intact; only clear the content area.
+    floatLayerEl.innerHTML = "";
+    scrollyRootEl.innerHTML = "";
 
     const reveal = cfg.revealOnScroll !== false;
     const observer =
@@ -364,7 +370,7 @@
         card.appendChild(footer);
       }
 
-      scrollRootEl.appendChild(card);
+      scrollyRootEl.appendChild(card);
       if (observer) observer.observe(card);
     }
 
@@ -373,14 +379,857 @@
     setTimeout(() => scrollToScene(initial), 0);
   }
 
-  // Render
-  const mode = (cfg.mode || "single").toLowerCase();
-  if (mode === "scroll") {
-    renderScroll();
-  } else {
-    // single
+  // Scrolly (Apple-like pinned chapters)
+  function clamp01(x) {
+    return Math.max(0, Math.min(1, x));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function lerpObj(from, to, t) {
+    return {
+      x: lerp(from.x ?? 0, to.x ?? 0, t),
+      y: lerp(from.y ?? 0, to.y ?? 0, t),
+      rot: lerp(from.rot ?? 0, to.rot ?? 0, t),
+      scale: lerp(from.scale ?? 1, to.scale ?? 1, t),
+      opacity: lerp(from.opacity ?? 1, to.opacity ?? 1, t),
+    };
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  }
+
+  function renderScrolly() {
+    const chapters = Array.isArray(cfg.chapters) ? cfg.chapters : null;
+    if (!chapters || chapters.length === 0) {
+      // Fall back to normal scroll stack if no chapters are defined
+      renderScroll();
+      return;
+    }
+
+    singleCardEl.hidden = true;
+    scrollRootEl.hidden = false;
+    scrollyRootEl.innerHTML = "";
+    floatLayerEl.innerHTML = "";
+
+    // Sticky progress pill
+    const pill = document.createElement("div");
+    pill.className = "progressPill";
+    pill.textContent = "Scroll";
+    scrollyRootEl.appendChild(pill);
+
+    const chapterEls = [];
+    const chapterMeta = new Map();
+
+    // Build DOM
+    for (const ch of chapters) {
+      const track = document.createElement("div");
+      track.className = "chapterTrack";
+      track.id = `chapter-${ch.id}`;
+      track.style.setProperty("--trackH", `${Math.max(120, ch.trackVh ?? 160)}vh`);
+
+      const sticky = document.createElement("div");
+      sticky.className = "chapterSticky";
+
+      const chapter = document.createElement("section");
+      chapter.className = "chapter";
+      chapter.dataset.chapterId = ch.id;
+
+      const header = document.createElement("header");
+      header.className = "header";
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      badge.textContent = cfg.badgeText || "";
+      const h = document.createElement("h2");
+      h.className = "title";
+      h.textContent = ch.title || "";
+      const sub = document.createElement("p");
+      sub.className = "subtitle";
+      sub.textContent = ch.subtitle || "";
+      header.appendChild(badge);
+      header.appendChild(h);
+      header.appendChild(sub);
+      chapter.appendChild(header);
+
+      // Layout
+      const layout = (ch.layout || "split").toLowerCase();
+      const grid = document.createElement("div");
+      grid.className = "chapterGrid";
+
+      // Left: body
+      const left = document.createElement("div");
+      left.className = "body";
+      for (const line of ch.body || []) {
+        const p = document.createElement("p");
+        p.textContent = line;
+        left.appendChild(p);
+      }
+
+      // Right: media / interactive area
+      const right = document.createElement("div");
+      if (layout === "question") {
+        // Chase UI lives here
+        const zone = document.createElement("div");
+        zone.className = "chaseZone";
+
+        const yesBtn = document.createElement("button");
+        yesBtn.type = "button";
+        yesBtn.className = "btn btnPrimary";
+        yesBtn.textContent = "Yes 💖";
+        yesBtn.dataset.chase = "yes";
+
+        const noBtn = document.createElement("button");
+        noBtn.type = "button";
+        noBtn.className = "btn btnSecondary";
+        noBtn.textContent = "Not this time";
+        noBtn.dataset.chase = "no";
+
+        // Initial placement
+        yesBtn.style.position = "absolute";
+        noBtn.style.position = "absolute";
+        yesBtn.style.left = "18%";
+        yesBtn.style.top = "38%";
+        noBtn.style.left = "58%";
+        noBtn.style.top = "58%";
+
+        zone.appendChild(yesBtn);
+        zone.appendChild(noBtn);
+
+        const hud = document.createElement("div");
+        hud.className = "chaseHud";
+        const taunt = document.createElement("div");
+        taunt.className = "taunt";
+        taunt.textContent = "(Tip: move your cursor near the buttons.)";
+
+        const serious = document.createElement("div");
+        serious.className = "microRow";
+
+        if (cfg.allowNo && cfg.chase?.showSeriousLinks !== false) {
+          const seriousYes = document.createElement("button");
+          seriousYes.type = "button";
+          seriousYes.className = "microLink";
+          seriousYes.textContent = "Yes (serious)";
+          seriousYes.addEventListener("click", () => scrollToChapter("yes"));
+
+          const seriousNo = document.createElement("button");
+          seriousNo.type = "button";
+          seriousNo.className = "microLink";
+          seriousNo.textContent = "No thanks (serious)";
+          seriousNo.addEventListener("click", () => scrollToChapter("no"));
+
+          serious.appendChild(seriousYes);
+          serious.appendChild(seriousNo);
+        }
+
+        const note = document.createElement("div");
+        note.className = "microNote";
+        note.textContent = "This is just a playful effect — your choice is always respected.";
+
+        hud.appendChild(taunt);
+        hud.appendChild(note);
+
+        right.appendChild(zone);
+        right.appendChild(hud);
+        if (serious.childNodes.length) right.appendChild(serious);
+
+        // Chase behavior
+        const chaseCfg = cfg.chase || {};
+        const reduced = prefersReducedMotion();
+        const enabled = chaseCfg.enabled !== false && !reduced;
+        const yesDodges = Math.max(0, chaseCfg.yesDodges ?? 0);
+        const noDodges = Math.max(0, chaseCfg.noDodges ?? 0);
+        const radius = Math.max(40, chaseCfg.triggerRadiusPx ?? 110);
+        const dodgeDist = Math.max(60, chaseCfg.dodgeDistancePx ?? 170);
+        const taunts = Array.isArray(chaseCfg.taunts) && chaseCfg.taunts.length ? chaseCfg.taunts : ["Hehe."];
+        let tauntIndex = 0;
+
+        const state = {
+          yes: { dodges: 0, max: yesDodges, givenUp: yesDodges === 0 },
+          no: { dodges: 0, max: noDodges, givenUp: noDodges === 0 },
+        };
+
+        function setTaunt(text) {
+          taunt.textContent = text;
+        }
+
+        function nextTaunt() {
+          tauntIndex = (tauntIndex + 1) % taunts.length;
+          setTaunt(taunts[tauntIndex]);
+        }
+
+        function within(el, rect, x, y, pad) {
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const dx = x - cx;
+          const dy = y - cy;
+          return Math.hypot(dx, dy) <= pad;
+        }
+
+        function dodge(el, which) {
+          const s = state[which];
+          if (!enabled || s.givenUp) return;
+          if (s.dodges >= s.max) {
+            s.givenUp = true;
+            setTaunt(which === "yes" ? "Okay okay — you can click me now." : "Alright, you win. Click me if you mean it.");
+            // Snap transforms back
+            el.style.setProperty("--tx", "0px");
+            el.style.setProperty("--ty", "0px");
+            return;
+          }
+
+          s.dodges += 1;
+          nextTaunt();
+
+          const zoneRect = zone.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+
+          // Random move within the zone
+          const margin = 18;
+          const maxLeft = zoneRect.width - elRect.width - margin;
+          const maxTop = zoneRect.height - elRect.height - margin;
+
+          const newLeft = margin + Math.random() * Math.max(1, maxLeft - margin);
+          const newTop = margin + Math.random() * Math.max(1, maxTop - margin);
+
+          el.style.left = `${newLeft}px`;
+          el.style.top = `${newTop}px`;
+
+          // Add a little kick
+          const dx = (Math.random() - 0.5) * 2 * dodgeDist;
+          const dy = (Math.random() - 0.5) * 2 * (dodgeDist * 0.55);
+          el.style.setProperty("--tx", `${dx.toFixed(0)}px`);
+          el.style.setProperty("--ty", `${dy.toFixed(0)}px`);
+          setTimeout(() => {
+            el.style.setProperty("--tx", "0px");
+            el.style.setProperty("--ty", "0px");
+          }, 140);
+        }
+
+        function onMove(evt) {
+          const x = evt.clientX;
+          const y = evt.clientY;
+          const yesRect = yesBtn.getBoundingClientRect();
+          const noRect = noBtn.getBoundingClientRect();
+          if (within(yesBtn, yesRect, x, y, radius)) dodge(yesBtn, "yes");
+          if (within(noBtn, noRect, x, y, radius)) dodge(noBtn, "no");
+        }
+
+        if (enabled) {
+          zone.addEventListener("pointermove", onMove);
+          zone.addEventListener("pointerdown", onMove);
+        } else {
+          setTaunt("(Reduced motion is on — chase disabled.)");
+          state.yes.givenUp = true;
+          state.no.givenUp = true;
+        }
+
+        yesBtn.addEventListener("click", () => {
+          if (!state.yes.givenUp && enabled) {
+            setTaunt("Nice try 😌");
+            return;
+          }
+          scrollToChapter("yes");
+          if (scenesById.get("yes")?.confetti || chapters.find((c) => c.id === "yes")?.confetti) burstConfetti();
+        });
+
+        noBtn.addEventListener("click", () => {
+          if (!cfg.allowNo) return;
+          if (!state.no.givenUp && enabled) {
+            setTaunt("If you really mean no, use the serious link 💛");
+            return;
+          }
+          scrollToChapter("no");
+        });
+      } else {
+        const key = ch.imageKey;
+        const src = key ? cfg.images?.[key] : null;
+        if (src) {
+          const media = document.createElement("div");
+          media.className = "chapterMedia";
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = ch.imageAlt || "";
+          media.appendChild(img);
+          right.appendChild(media);
+        }
+      }
+
+      grid.appendChild(left);
+      grid.appendChild(right);
+      chapter.appendChild(grid);
+
+      sticky.appendChild(chapter);
+      track.appendChild(sticky);
+      scrollyRootEl.appendChild(track);
+
+      chapterEls.push(track);
+      chapterMeta.set(ch.id, { track, chapter });
+    }
+
+    // Floating items
+    const floats = Array.isArray(cfg.floating) ? cfg.floating : [];
+    const floatNodes = new Map();
+    for (const f of floats) {
+      const node = document.createElement("div");
+      node.className = "floatItem";
+      node.id = `float-${f.id}`;
+      node.style.setProperty("--w", `${Math.max(60, f.widthPx ?? 160)}px`);
+      node.style.setProperty("--op", "0");
+      const img = document.createElement("img");
+      img.src = f.src || cfg.images?.[f.imageKey] || "";
+      img.alt = "";
+      node.appendChild(img);
+      floatLayerEl.appendChild(node);
+      floatNodes.set(f.id, node);
+    }
+
+    function chapterProgress(chId) {
+      const meta = chapterMeta.get(chId);
+      if (!meta) return 0;
+      const rect = meta.track.getBoundingClientRect();
+      const viewH = window.innerHeight;
+      const total = Math.max(1, rect.height - viewH);
+      const progressed = clamp01((-rect.top) / total);
+      return progressed;
+    }
+
+    function scrollToChapter(chId) {
+      const meta = chapterMeta.get(chId);
+      if (!meta) return;
+      meta.track.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" });
+      history.replaceState({ sceneId: chId }, "", `#${encodeURIComponent(chId)}`);
+    }
+
+    function update() {
+      // progress pill: show the most-visible chapter
+      let best = { id: chapters[0].id, score: -Infinity };
+      for (const ch of chapters) {
+        const meta = chapterMeta.get(ch.id);
+        if (!meta) continue;
+        const r = meta.track.getBoundingClientRect();
+        const score = -Math.abs(r.top) + Math.min(0, r.bottom - window.innerHeight);
+        if (score > best.score) best = { id: ch.id, score };
+      }
+
+      const p = chapterProgress(best.id);
+      pill.textContent = `${best.id.toUpperCase()} · ${Math.round(p * 100)}%`;
+
+      // Floats: interpolate based on a chapter range
+      for (const f of floats) {
+        const node = floatNodes.get(f.id);
+        if (!node) continue;
+        const range = f.chapterRange || [];
+        const fromId = range[0];
+        const toId = range[1] || fromId;
+
+        // map progress between chapters: use progress of from->to based on scroll position in the overall document
+        // Simple version: blend using progress inside the "to" chapter when we are near it.
+        let t = 0;
+        if (fromId === toId) {
+          t = chapterProgress(fromId);
+        } else {
+          // Use the average of the two progresses as a simple story blend
+          t = clamp01((chapterProgress(fromId) * 0.5 + chapterProgress(toId) * 0.5));
+        }
+
+        const tr = lerpObj(f.from || {}, f.to || {}, t);
+        node.style.setProperty("--op", `${clamp01(tr.opacity)}`);
+        node.style.opacity = `${clamp01(tr.opacity)}`;
+        node.style.transform = `translate(-50%, -50%) translate(${tr.x.toFixed(0)}px, ${tr.y.toFixed(0)}px) rotate(${tr.rot.toFixed(1)}deg) scale(${tr.scale.toFixed(3)})`;
+      }
+
+      if (!prefersReducedMotion()) requestAnimationFrame(update);
+    }
+
+    // Hash jump
+    const initial = getInitialScene();
+    setTimeout(() => scrollToChapter(initial), 0);
+
+    if (prefersReducedMotion()) {
+      pill.textContent = "Scroll";
+    } else {
+      requestAnimationFrame(update);
+    }
+  }
+
+  // New: multi-page rendering
+  function setDocTitle(t) {
+    if (t) document.title = t;
+  }
+
+  function clearAllRoots() {
+    // Clear scrolly area
+    if (floatLayerEl) floatLayerEl.innerHTML = "";
+    if (scrollyRootEl) scrollyRootEl.innerHTML = "";
+  }
+
+  function makeActionLinkButton({ label, href, variant }) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const v = variant === "secondary" ? "secondary" : "primary";
+    btn.className = `btn ${v === "primary" ? "btnPrimary" : "btnSecondary"}`;
+    btn.textContent = label || "Continue";
+    btn.addEventListener("click", () => {
+      if (href) window.location.href = href;
+    });
+    return btn;
+  }
+
+  function renderStoryPage() {
+    const story = cfg.pages?.story;
+    const chapters = Array.isArray(story?.chapters) ? story.chapters : [];
+    if (!chapters.length) {
+      // fallback
+      renderScrolly();
+      return;
+    }
+
+    setDocTitle(cfg.pageTitle || "Valentine?");
+    singleCardEl.hidden = true;
+    scrollRootEl.hidden = false;
+    clearAllRoots();
+
+    const pill = document.createElement("div");
+    pill.className = "progressPill";
+    pill.textContent = "Scroll";
+    scrollyRootEl.appendChild(pill);
+
+    const chapterMeta = new Map();
+
+    for (const ch of chapters) {
+      const track = document.createElement("div");
+      track.className = "chapterTrack";
+      track.id = `chapter-${ch.id}`;
+      track.style.setProperty("--trackH", `${Math.max(120, ch.trackVh ?? 160)}vh`);
+
+      const sticky = document.createElement("div");
+      sticky.className = "chapterSticky";
+
+      const chapter = document.createElement("section");
+      chapter.className = "chapter";
+      chapter.dataset.chapterId = ch.id;
+
+      const header = document.createElement("header");
+      header.className = "header";
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      badge.textContent = cfg.badgeText || "";
+      const h = document.createElement("h2");
+      h.className = "title";
+      h.textContent = ch.title || "";
+      const sub = document.createElement("p");
+      sub.className = "subtitle";
+      sub.textContent = ch.subtitle || "";
+      header.appendChild(badge);
+      header.appendChild(h);
+      header.appendChild(sub);
+      chapter.appendChild(header);
+
+      const grid = document.createElement("div");
+      grid.className = "chapterGrid";
+
+      const left = document.createElement("div");
+      left.className = "body";
+      for (const line of ch.body || []) {
+        const p = document.createElement("p");
+        p.textContent = line;
+        left.appendChild(p);
+      }
+
+      const right = document.createElement("div");
+      const key = ch.imageKey;
+      const src = key ? cfg.images?.[key] : null;
+      if (src) {
+        const media = document.createElement("div");
+        media.className = "chapterMedia";
+        const img = document.createElement("img");
+        img.src = src;
+        img.alt = ch.imageAlt || "";
+        media.appendChild(img);
+        right.appendChild(media);
+      }
+
+      grid.appendChild(left);
+      grid.appendChild(right);
+      chapter.appendChild(grid);
+
+      sticky.appendChild(chapter);
+      track.appendChild(sticky);
+      scrollyRootEl.appendChild(track);
+      chapterMeta.set(ch.id, { track });
+    }
+
+    // CTA card (non-sticky)
+    if (story?.cta?.href) {
+      const ctaTrack = document.createElement("div");
+      ctaTrack.className = "chapterTrack";
+      ctaTrack.style.setProperty("--trackH", `120vh`);
+      const sticky = document.createElement("div");
+      sticky.className = "chapterSticky";
+      const chapter = document.createElement("section");
+      chapter.className = "chapter";
+      const header = document.createElement("header");
+      header.className = "header";
+      const badge = document.createElement("div");
+      badge.className = "badge";
+      badge.textContent = cfg.badgeText || "";
+      const h = document.createElement("h2");
+      h.className = "title";
+      h.textContent = story.cta.title || "One more thing…";
+      const sub = document.createElement("p");
+      sub.className = "subtitle";
+      sub.textContent = story.cta.subtitle || "";
+      header.appendChild(badge);
+      header.appendChild(h);
+      header.appendChild(sub);
+      chapter.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "body";
+      const p = document.createElement("p");
+      p.textContent = "When you’re ready, click below.";
+      body.appendChild(p);
+      chapter.appendChild(body);
+
+      const actions = document.createElement("div");
+      actions.className = "actions";
+      actions.appendChild(
+        makeActionLinkButton({ label: story.cta.label || "Next →", href: story.cta.href, variant: "primary" })
+      );
+      chapter.appendChild(actions);
+
+      sticky.appendChild(chapter);
+      ctaTrack.appendChild(sticky);
+      scrollyRootEl.appendChild(ctaTrack);
+    }
+
+    // Floating items (optional)
+    const floats = Array.isArray(cfg.floating) ? cfg.floating : [];
+    const floatNodes = new Map();
+    for (const f of floats) {
+      const node = document.createElement("div");
+      node.className = "floatItem";
+      node.id = `float-${f.id}`;
+      node.style.setProperty("--w", `${Math.max(60, f.widthPx ?? 160)}px`);
+      node.style.opacity = "0";
+      const img = document.createElement("img");
+      img.src = f.src || cfg.images?.[f.imageKey] || "";
+      img.alt = "";
+      node.appendChild(img);
+      floatLayerEl.appendChild(node);
+      floatNodes.set(f.id, node);
+    }
+
+    function clamp01(x) {
+      return Math.max(0, Math.min(1, x));
+    }
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+    function lerpObj(from, to, t) {
+      return {
+        x: lerp(from.x ?? 0, to.x ?? 0, t),
+        y: lerp(from.y ?? 0, to.y ?? 0, t),
+        rot: lerp(from.rot ?? 0, to.rot ?? 0, t),
+        scale: lerp(from.scale ?? 1, to.scale ?? 1, t),
+        opacity: lerp(from.opacity ?? 1, to.opacity ?? 1, t),
+      };
+    }
+
+    function chapterProgress(chId) {
+      const meta = chapterMeta.get(chId);
+      if (!meta) return 0;
+      const rect = meta.track.getBoundingClientRect();
+      const viewH = window.innerHeight;
+      const total = Math.max(1, rect.height - viewH);
+      return clamp01((-rect.top) / total);
+    }
+
+    function update() {
+      // pill: show first chapter progress for simplicity
+      const active = chapters[0]?.id;
+      if (active) pill.textContent = `SCROLL · ${Math.round(chapterProgress(active) * 100)}%`;
+
+      for (const f of floats) {
+        const node = floatNodes.get(f.id);
+        if (!node) continue;
+        const range = f.chapterRange || [];
+        const fromId = range[0] || chapters[0]?.id;
+        const toId = range[1] || fromId;
+        const t = clamp01((chapterProgress(fromId) + chapterProgress(toId)) / 2);
+        const tr = lerpObj(f.from || {}, f.to || {}, t);
+        node.style.opacity = `${clamp01(tr.opacity)}`;
+        node.style.transform = `translate(-50%, -50%) translate(${tr.x.toFixed(0)}px, ${tr.y.toFixed(0)}px) rotate(${tr.rot.toFixed(1)}deg) scale(${tr.scale.toFixed(3)})`;
+      }
+
+      if (!prefersReducedMotion()) requestAnimationFrame(update);
+    }
+
+    if (!prefersReducedMotion()) requestAnimationFrame(update);
+  }
+
+  function renderQuestionPage() {
+    const q = cfg.pages?.question;
+    setDocTitle(q?.title || "Question");
+
+    singleCardEl.hidden = true;
+    scrollRootEl.hidden = false;
+    clearAllRoots();
+
+    const chapter = document.createElement("section");
+    chapter.className = "chapter chapterFull";
+
+    const header = document.createElement("header");
+    header.className = "header";
+    const badge = document.createElement("div");
+    badge.className = "badge";
+    badge.textContent = cfg.badgeText || "";
+    const h = document.createElement("h1");
+    h.className = "title";
+    h.textContent = q?.title || "Will you be my Valentine?";
+    const sub = document.createElement("p");
+    sub.className = "subtitle";
+    sub.textContent = q?.subtitle || "";
+    header.appendChild(badge);
+    header.appendChild(h);
+    header.appendChild(sub);
+    chapter.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "body";
+    for (const line of q?.body || []) {
+      const p = document.createElement("p");
+      p.textContent = line;
+      body.appendChild(p);
+    }
+    chapter.appendChild(body);
+
+    const zone = document.createElement("div");
+    zone.className = "chaseZone chaseFull";
+
+    const yesBtn = document.createElement("button");
+    yesBtn.type = "button";
+    yesBtn.className = "btn btnPrimary";
+    yesBtn.textContent = q?.yesLabel || "Yes 💖";
+
+    const noBtn = document.createElement("button");
+    noBtn.type = "button";
+    noBtn.className = "btn btnSecondary";
+    noBtn.textContent = q?.noLabel || "Not this time";
+
+    yesBtn.style.position = "absolute";
+    noBtn.style.position = "absolute";
+    yesBtn.style.left = "18%";
+    yesBtn.style.top = "42%";
+    noBtn.style.left = "62%";
+    noBtn.style.top = "58%";
+
+    zone.appendChild(yesBtn);
+    zone.appendChild(noBtn);
+    chapter.appendChild(zone);
+
+    const hud = document.createElement("div");
+    hud.className = "chaseHud";
+    const taunt = document.createElement("div");
+    taunt.className = "taunt";
+    taunt.textContent = "(Move near the buttons…)";
+    hud.appendChild(taunt);
+    chapter.appendChild(hud);
+
+    // Serious links (guardrail)
+    if (cfg.allowNo && cfg.chase?.showSeriousLinks !== false) {
+      const row = document.createElement("div");
+      row.className = "microRow";
+      row.appendChild(
+        makeActionLinkButton({
+          label: q?.seriousYesLabel || "Yes (serious)",
+          href: q?.yesHref || "yes.html",
+          variant: "secondary",
+        })
+      );
+      row.appendChild(
+        makeActionLinkButton({
+          label: q?.seriousNoLabel || "No thanks (serious)",
+          href: q?.noHref || "no.html",
+          variant: "secondary",
+        })
+      );
+      chapter.appendChild(row);
+    }
+
+    const hint = document.createElement("div");
+    hint.className = "microNote";
+    hint.textContent = cfg.hintText || "";
+    chapter.appendChild(hint);
+
+    scrollyRootEl.appendChild(chapter);
+
+    // Chase behavior (both buttons)
+    const chaseCfg = cfg.chase || {};
+    const reduced = prefersReducedMotion();
+    const enabled = chaseCfg.enabled !== false && !reduced;
+    const yesDodges = Math.max(0, chaseCfg.yesDodges ?? 0);
+    const noDodges = Math.max(0, chaseCfg.noDodges ?? 0);
+    const radius = Math.max(50, chaseCfg.triggerRadiusPx ?? 110);
+    const dodgeDist = Math.max(60, chaseCfg.dodgeDistancePx ?? 170);
+    const taunts = Array.isArray(chaseCfg.taunts) && chaseCfg.taunts.length ? chaseCfg.taunts : ["Hehe."];
+    let tauntIndex = 0;
+
+    const state = {
+      yes: { dodges: 0, max: yesDodges, ready: yesDodges === 0 },
+      no: { dodges: 0, max: noDodges, ready: noDodges === 0 },
+    };
+
+    function setTaunt(text) {
+      taunt.textContent = text;
+    }
+    function nextTaunt() {
+      tauntIndex = (tauntIndex + 1) % taunts.length;
+      setTaunt(taunts[tauntIndex]);
+    }
+
+    function distanceToCenter(el, x, y) {
+      const r = el.getBoundingClientRect();
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      return Math.hypot(x - cx, y - cy);
+    }
+
+    function dodge(el, which) {
+      const s = state[which];
+      if (!enabled || s.ready) return;
+      if (s.dodges >= s.max) {
+        s.ready = true;
+        el.classList.add("isReady");
+        setTaunt(which === "yes" ? "Okay okay — click me 😌" : "Alright, you can click me now." );
+        el.style.setProperty("--tx", "0px");
+        el.style.setProperty("--ty", "0px");
+        return;
+      }
+
+      s.dodges += 1;
+      nextTaunt();
+
+      const zoneRect = zone.getBoundingClientRect();
+      const elRect = el.getBoundingClientRect();
+      const margin = 18;
+      const maxLeft = Math.max(margin, zoneRect.width - elRect.width - margin);
+      const maxTop = Math.max(margin, zoneRect.height - elRect.height - margin);
+
+      const newLeft = margin + Math.random() * Math.max(1, maxLeft - margin);
+      const newTop = margin + Math.random() * Math.max(1, maxTop - margin);
+      el.style.left = `${newLeft}px`;
+      el.style.top = `${newTop}px`;
+
+      const dx = (Math.random() - 0.5) * 2 * dodgeDist;
+      const dy = (Math.random() - 0.5) * 2 * (dodgeDist * 0.55);
+      el.style.setProperty("--tx", `${dx.toFixed(0)}px`);
+      el.style.setProperty("--ty", `${dy.toFixed(0)}px`);
+      setTimeout(() => {
+        el.style.setProperty("--tx", "0px");
+        el.style.setProperty("--ty", "0px");
+      }, 140);
+    }
+
+    function onMove(evt) {
+      const x = evt.clientX;
+      const y = evt.clientY;
+      if (distanceToCenter(yesBtn, x, y) <= radius) dodge(yesBtn, "yes");
+      if (distanceToCenter(noBtn, x, y) <= radius) dodge(noBtn, "no");
+    }
+
+    if (enabled) {
+      zone.addEventListener("pointermove", onMove);
+      zone.addEventListener("pointerdown", onMove);
+    } else {
+      setTaunt("(Reduced motion is on — chase disabled.)");
+      state.yes.ready = true;
+      state.no.ready = true;
+    }
+
+    yesBtn.addEventListener("click", () => {
+      if (!state.yes.ready && enabled) {
+        setTaunt("Nice try 😌");
+        return;
+      }
+      window.location.href = q?.yesHref || "yes.html";
+    });
+
+    noBtn.addEventListener("click", () => {
+      if (!cfg.allowNo) return;
+      if (!state.no.ready && enabled) {
+        setTaunt("If you really mean no, use the serious link 💛");
+        return;
+      }
+      window.location.href = q?.noHref || "no.html";
+    });
+  }
+
+  function renderResponsePage(kind) {
+    const page = cfg.pages?.[kind];
+    if (!page) {
+      // fallback to original scenes
+      scrollRootEl.hidden = true;
+      singleCardEl.hidden = false;
+      goTo(kind);
+      return;
+    }
+
+    setDocTitle(page.title || kind);
     scrollRootEl.hidden = true;
     singleCardEl.hidden = false;
-    goTo(getInitialScene());
+
+    titleEl.textContent = page.title || "";
+    subtitleEl.textContent = page.subtitle || "";
+    setBodyParagraphs(page.body);
+
+    // image
+    const key = page.imageKey;
+    const src = key ? cfg.images?.[key] : null;
+    if (src) {
+      mediaWrapEl.hidden = false;
+      imageEl.src = src;
+      imageEl.alt = page.imageAlt || "";
+    } else {
+      mediaWrapEl.hidden = true;
+      imageEl.removeAttribute("src");
+      imageEl.alt = "";
+    }
+
+    clearActions();
+    for (const a of page.actions || []) {
+      const btn = makeActionLinkButton({ label: a.label, href: a.href, variant: a.variant });
+      actionsEl.appendChild(btn);
+    }
+
+    restartEl.hidden = true;
+    if (page.confetti) burstConfetti();
+  }
+
+  // Render
+  // Decide renderer
+  if (pageId === "story") {
+    renderStoryPage();
+  } else if (pageId === "question") {
+    renderQuestionPage();
+  } else if (pageId === "yes") {
+    renderResponsePage("yes");
+  } else if (pageId === "no") {
+    renderResponsePage("no");
+  } else {
+    // Fallback to mode-based behavior
+    const mode = (cfg.mode || "single").toLowerCase();
+    if (mode === "scrolly") {
+      renderScrolly();
+    } else if (mode === "scroll") {
+      renderScroll();
+    } else {
+      scrollRootEl.hidden = true;
+      singleCardEl.hidden = false;
+      goTo(getInitialScene());
+    }
   }
 })();

@@ -5,7 +5,12 @@ window.VAL_CONFIG = {
   // Rendering mode:
   // - "single": one card that switches scenes (original behavior)
   // - "scroll": all scenes stacked; scrolling reveals them
-  mode: "scroll",
+  // Rendering mode is now decided by the HTML page you open:
+  // - index.html (story)
+  // - question.html
+  // - yes.html / no.html
+  // (single/scroll/scrolly modes are still supported as fallback)
+  mode: "scrolly",
 
   // Only applies in scroll mode.
   revealOnScroll: true,
@@ -27,11 +32,26 @@ window.VAL_CONFIG = {
   // Guardrails:
   // - A clear alternative "No" link is always shown so it never becomes coercive.
   // - After maxDodges, the button stops moving (if stopAfterMaxDodges=true).
-  runawayNo: {
+  // Chase buttons (scrolly mode question chapter)
+  chase: {
     enabled: true,
-    maxDodges: 6,
-    scrollPerDodgePx: 140,
-    stopAfterMaxDodges: true,
+    // both buttons can dodge until they "give up"
+    yesDodges: 5,
+    noDodges: 7,
+    // how close the pointer needs to get before it dodges
+    triggerRadiusPx: 110,
+    // max move distance per dodge
+    dodgeDistancePx: 170,
+    // playful voice lines
+    taunts: [
+      "Hehe, not that fast…",
+      "You gotta *mean* it 😌",
+      "Scrolling is required for this quest.",
+      "Skill issue (jk).",
+      "Okay okay, I’ll chill… soon.",
+    ],
+    // always show a serious, accessible choice so it never feels coercive
+    showSeriousLinks: true,
   },
 
   // Put your images in assets/images/ and reference them here.
@@ -43,7 +63,116 @@ window.VAL_CONFIG = {
     no: "assets/images/no.svg",
   },
 
-  // Scenes define what shows on each step.
+  // Floating visuals (scrolly mode). These can be photos, stickers, etc.
+  // Put PNGs/SVGs in assets/images and point imageKey to one of VAL_CONFIG.images keys,
+  // or use src directly.
+  floating: [
+    {
+      id: "float-heart",
+      src: "assets/images/yes.svg",
+      widthPx: 160,
+      // position is relative to viewport center
+      from: { x: -360, y: -180, rot: -18, scale: 0.95, opacity: 0.0 },
+      to: { x: -320, y: -220, rot: 12, scale: 1.05, opacity: 0.9 },
+      chapterRange: ["intro", "question"],
+    },
+    {
+      id: "float-sparkle",
+      src: "assets/images/question.svg",
+      widthPx: 120,
+      from: { x: 380, y: -120, rot: 10, scale: 0.9, opacity: 0.0 },
+      to: { x: 420, y: -160, rot: 32, scale: 1.0, opacity: 0.75 },
+      chapterRange: ["intro", "question"],
+    },
+  ],
+
+  // Scrollytelling chapters
+  pages: {
+    story: {
+      // The scroll-story runs until the confession, then a click takes you to question.html
+      chapters: [
+        {
+          id: "intro",
+          title: "Hey you :)",
+          subtitle: "Scroll a little… I made this for you.",
+          body: [
+            "This is a scroll-story page (Apple product page vibes, but romantic).",
+            "As you scroll, things reveal and float around.",
+          ],
+          imageKey: "intro",
+          trackVh: 170,
+          layout: "split",
+        },
+        {
+          id: "build",
+          title: "A quick confession",
+          subtitle: "You make life feel lighter.",
+          body: [
+            "I like you… a lot.",
+            "And I’d love to make a Valentine plan with you.",
+          ],
+          imageKey: "question",
+          trackVh: 170,
+          layout: "split",
+        },
+      ],
+      cta: {
+        title: "One more thing…",
+        subtitle: "Click when you’re ready.",
+        label: "I have a question →",
+        href: "question.html",
+      },
+    },
+
+    question: {
+      title: "Will you be my Valentine?",
+      subtitle: "Catch a button (gently).",
+      body: [
+        "Okay… here’s the question.",
+        "Both buttons are feeling shy today.",
+      ],
+      yesLabel: "Yes 💖",
+      noLabel: "Not this time",
+      yesHref: "yes.html",
+      noHref: "no.html",
+      seriousYesLabel: "Yes (serious)",
+      seriousNoLabel: "No thanks (serious)",
+    },
+
+    yes: {
+      title: "YAY!!!",
+      subtitle: "Best answer ever.",
+      imageKey: "yes",
+      body: [
+        "It’s official.",
+        "Text me: what do you want to do + when?",
+      ],
+      actions: [
+        { label: "Back to story", href: "index.html" },
+        { label: "Ask again", href: "question.html", variant: "secondary" },
+      ],
+      confetti: true,
+    },
+
+    no: {
+      title: "All good 💛",
+      subtitle: "Thanks for being honest.",
+      imageKey: "no",
+      body: [
+        "No hard feelings — you’re still my favorite human.",
+        "If you want, we can still do something low-key.",
+      ],
+      actions: [
+        { label: "Back to story", href: "index.html" },
+        { label: "See the question", href: "question.html", variant: "secondary" },
+      ],
+    },
+  },
+
+  // Back-compat for the old scrolly renderer (kept empty intentionally)
+  chapters: [],
+
+  // Scenes define what shows on each step (single/scroll modes).
   scenes: [
     {
       id: "intro",
