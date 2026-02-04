@@ -17,6 +17,13 @@ Edit `config.js`:
 - `pages`: edit the story chapters, question text, and yes/no endings
 - `chase`: tune how much the buttons dodge + what they say
 
+### Taunt/prompt text files
+
+One line per message:
+
+- `assets/text/chase-taunts.txt` (button-chase taunts)
+- `assets/text/no-confirm-prompts.txt` (the repeating “really sure?” prompts)
+
 ### Add your images
 
 Put files in `assets/images/` and reference them in `config.js`.

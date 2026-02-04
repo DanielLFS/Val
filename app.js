@@ -402,6 +402,16 @@
     return window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
   }
 
+  async function loadLinesFile(path) {
+    const res = await fetch(path, { cache: "no-store" });
+    if (!res.ok) return [];
+    const text = await res.text();
+    return text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("#"));
+  }
+
   function renderScrolly() {
     const chapters = Array.isArray(cfg.chapters) ? cfg.chapters : null;
     if (!chapters || chapters.length === 0) {
@@ -1054,8 +1064,9 @@
     const noDodges = Math.max(0, chaseCfg.noDodges ?? 0);
     const radius = Math.max(50, chaseCfg.triggerRadiusPx ?? 110);
     const dodgeDist = Math.max(60, chaseCfg.dodgeDistancePx ?? 170);
-    const taunts = Array.isArray(chaseCfg.taunts) && chaseCfg.taunts.length ? chaseCfg.taunts : ["Hehe."];
+    let taunts = Array.isArray(chaseCfg.taunts) && chaseCfg.taunts.length ? chaseCfg.taunts : ["Hehe."];
     let tauntIndex = 0;
+    let tauntsUsed = false;
 
     const state = {
       yes: { dodges: 0, max: yesDodges, ready: yesDodges === 0 },
@@ -1064,10 +1075,11 @@
 
     // No-confirmation loop
     const noConfirm = q?.noConfirm || {};
-    const confirmPrompts = Array.isArray(noConfirm.prompts) ? noConfirm.prompts : [];
+    let confirmPrompts = Array.isArray(noConfirm.prompts) ? noConfirm.prompts : [];
     const yesScaleStart = typeof noConfirm.yesScaleStart === "number" ? noConfirm.yesScaleStart : 1.0;
     const yesScaleStep = typeof noConfirm.yesScaleStep === "number" ? noConfirm.yesScaleStep : 0.14;
     let confirmIndex = 0;
+    let confirmUsed = false;
 
     function applyYesScale() {
       const scale = yesScaleStart + confirmIndex * yesScaleStep;
@@ -1076,6 +1088,7 @@
 
     function showConfirmPrompt() {
       if (!confirmPrompts.length) return;
+      confirmUsed = true;
       const idx = Math.min(confirmIndex, confirmPrompts.length - 1);
       setTaunt(confirmPrompts[idx]);
       applyYesScale();
@@ -1093,6 +1106,7 @@
       taunt.textContent = text;
     }
     function nextTaunt() {
+      tauntsUsed = true;
       tauntIndex = (tauntIndex + 1) % taunts.length;
       setTaunt(taunts[tauntIndex]);
     }
@@ -1192,6 +1206,32 @@
 
     // Start scales clean
     yesBtn.style.setProperty("--scale", String(yesScaleStart));
+
+    // Load taunts/prompts from text files (if provided)
+    // Only override before the user starts interacting, to avoid mid-run changes.
+    const tauntsFile = chaseCfg.tauntsFile;
+    if (typeof tauntsFile === "string" && tauntsFile.length) {
+      loadLinesFile(tauntsFile)
+        .then((lines) => {
+          if (!tauntsUsed && Array.isArray(lines) && lines.length) {
+            taunts = lines;
+            tauntIndex = 0;
+          }
+        })
+        .catch(() => {});
+    }
+
+    const promptsFile = noConfirm.promptsFile;
+    if (typeof promptsFile === "string" && promptsFile.length) {
+      loadLinesFile(promptsFile)
+        .then((lines) => {
+          if (!confirmUsed && Array.isArray(lines) && lines.length) {
+            confirmPrompts = lines;
+            confirmIndex = 0;
+          }
+        })
+        .catch(() => {});
+    }
   }
 
   function renderResponsePage(kind) {

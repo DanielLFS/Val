@@ -50,6 +50,7 @@ window.VAL_CONFIG = {
       "Skill issue (jk).",
       "Okay okay, I’ll chill… soon.",
     ],
+    tauntsFile: "assets/text/chase-taunts.txt",
     // Testing-only: show extra direct links (recommended during development)
     showSeriousLinks: false,
   },
@@ -145,6 +146,7 @@ window.VAL_CONFIG = {
           "Okay but what if I say please 😭",
           "Last chance…?",
         ],
+        promptsFile: "assets/text/no-confirm-prompts.txt",
         yesScaleStart: 1.0,
         yesScaleStep: 0.14,
         noLabelDuring: "I’m sure",
