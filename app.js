@@ -433,8 +433,8 @@
     pillLabel.textContent = "Scroll";
     const pillBar = document.createElement("div");
     pillBar.className = "pillBar";
-    pill.appendChild(pillLabel);
     pill.appendChild(pillBar);
+    pill.appendChild(pillLabel);
     scrollyRootEl.appendChild(pill);
 
     const chapterEls = [];
@@ -815,8 +815,8 @@
     pillLabel.textContent = "Scroll";
     const pillBar = document.createElement("div");
     pillBar.className = "pillBar";
-    pill.appendChild(pillLabel);
     pill.appendChild(pillBar);
+    pill.appendChild(pillLabel);
     scrollyRootEl.appendChild(pill);
 
     const chapterMeta = new Map();
