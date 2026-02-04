@@ -149,6 +149,10 @@ window.VAL_CONFIG = {
         promptsFile: "assets/text/no-confirm-prompts.txt",
         yesScaleStart: 1.0,
         yesScaleStep: 0.18,
+        // Make the "No" button shrink a bit each time they click it during the confirm loop.
+        // (The first confirmation stays normal size.)
+        noScaleStart: 1.0,
+        noScaleStep: 0.08,
         noLabelDuring: "I’m sure",
         yesLabelDuring: "Okay fine… YES 💖",
         finalNoTaunt: "Okay. I’ll stop asking 💛",

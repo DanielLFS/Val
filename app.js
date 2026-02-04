@@ -1078,14 +1078,22 @@
     let confirmPrompts = Array.isArray(noConfirm.prompts) ? noConfirm.prompts : [];
     const yesScaleStart = typeof noConfirm.yesScaleStart === "number" ? noConfirm.yesScaleStart : 1.0;
     const yesScaleStep = typeof noConfirm.yesScaleStep === "number" ? noConfirm.yesScaleStep : 0.18;
+    const noScaleStart = typeof noConfirm.noScaleStart === "number" ? noConfirm.noScaleStart : 1.0;
+    const noScaleStep = typeof noConfirm.noScaleStep === "number" ? noConfirm.noScaleStep : 0.08;
     let confirmIndex = 0;
     let confirmUsed = false;
 
     let yesBaseScale = yesScaleStart;
+    let noBaseScale = noScaleStart;
 
     function setYesBaseScale(scale) {
       yesBaseScale = scale;
       yesBtn.style.setProperty("--scale", String(yesBaseScale));
+    }
+
+    function setNoBaseScale(scale) {
+      noBaseScale = scale;
+      noBtn.style.setProperty("--scale", String(noBaseScale));
     }
 
     function popYes() {
@@ -1108,6 +1116,9 @@
       setTaunt(confirmPrompts[idx]);
       const scale = Math.min(3.0, yesScaleStart + (idx + 1) * yesScaleStep);
       setYesBaseScale(scale);
+      // Keep the first confirmation at normal size, then shrink a bit each click.
+      const noScale = Math.max(0.65, noScaleStart - idx * noScaleStep);
+      setNoBaseScale(noScale);
       popYes();
 
       if (noConfirm.noLabelDuring) noBtn.textContent = noConfirm.noLabelDuring;
@@ -1219,6 +1230,7 @@
 
     // Start scales clean
     setYesBaseScale(yesScaleStart);
+    setNoBaseScale(noScaleStart);
 
     // Load taunts/prompts from text files (if provided)
     // Only override before the user starts interacting, to avoid mid-run changes.
