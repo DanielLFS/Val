@@ -155,7 +155,7 @@ window.VAL_CONFIG = {
             // Final-collage tuning
             spread: 0.95,
             targetCount: 40,
-            appearScale: 5.0,
+            appearScale: 2.0,
             // Alternative sizing: make each polaroid frame height ~ % of the stage height.
             // (When set, this overrides targetCount sizing in "final" mode.)
             targetHeightFrac: 0.42,
