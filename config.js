@@ -59,12 +59,12 @@ window.VAL_CONFIG = {
   chase: {
     enabled: true,
     // both buttons can dodge until they "give up"
-    yesDodges: 5,
-    noDodges: 7,
+    yesDodges: 10,
+    noDodges: 10,
     // how close the pointer needs to get before it dodges
-    triggerRadiusPx: 110,
+    triggerRadiusPx: 60,
     // max move distance per dodge
-    dodgeDistancePx: 170,
+    dodgeDistancePx: 120,
     // playful voice lines
     taunts: [
       "Hehe, not that fast…",
@@ -100,8 +100,7 @@ window.VAL_CONFIG = {
           subtitle: "Scroll a little… I made this for you.",
           showBadge: true,
           body: [
-            "This is a scroll-story page (Apple product page vibes, but romantic).",
-            "As you scroll, things reveal and float around.",
+            "This is a scroll-story page, as you scroll things will reveal themselves and float around.",
           ],
           trackVh: 170,
           layout: "split",
@@ -109,11 +108,12 @@ window.VAL_CONFIG = {
         {
           id: "build",
           title: "A quick confession",
-          subtitle: "You make life feel lighter.",
+          subtitle: "I love you!!",
           showBadge: false,
           body: [
-            "I like you… a lot.",
-            "And I’d love to make a Valentine plan with you.",
+            "You've made the past few weeks really special for me ",
+            "I'd like to remind you that I want to keep spending my time with you! ",
+            "So here's a few reminders of the past 3ish months together :)",
           ],
           trackVh: 170,
           layout: "split",
@@ -156,7 +156,7 @@ window.VAL_CONFIG = {
         noScaleStart: 1.0,
         noScaleStep: 0.08,
         noLabelDuring: "I’m sure",
-        yesLabelDuring: "Okay fine… YES 💖",
+        yesLabelDuring: "YES 💖",
         finalNoTaunt: "Okay. I’ll stop asking 💛",
       },
     },
