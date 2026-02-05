@@ -152,6 +152,9 @@ window.VAL_CONFIG = {
             mode: "final",
             // When true, this chapter renders as images-only (no title/subtitle/body).
             bare: true,
+            // Final-collage tuning
+            spread: 0.95,
+            targetCount: 25,
             columns: 3,
             // If true, the order is a stable shuffle.
             shuffle: false,

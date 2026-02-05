@@ -1163,32 +1163,74 @@
 
           // Layout is computed on first update once stage has real size.
           let laidOut = false;
-          const pointsPx = [];
+          const placed = [];
 
           const spread = typeof gcfg.spread === "number" ? Math.max(0.75, Math.min(0.98, gcfg.spread)) : 0.95;
-          const targetCount = typeof gcfg.targetCount === "number" ? Math.max(8, Math.min(40, gcfg.targetCount)) : 20;
+          const targetCount = typeof gcfg.targetCount === "number" ? Math.max(8, Math.min(60, gcfg.targetCount)) : 25;
 
-          const bestCandidatePointPx = (w, h, radius) => {
+          const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+          const bestCandidatePointPx = (w, h, extentX, extentY, radius) => {
+            const edgePad = 12;
             const halfW = (w * spread) / 2;
             const halfH = (h * spread) / 2;
-            let best = { x: 0, y: 0, score: -1 };
-            const tries = 36;
-            for (let k = 0; k < tries; k++) {
-              const x = (rng() * 2 - 1) * halfW;
-              const y = (rng() * 2 - 1) * halfH;
-              let minScore = Infinity;
-              for (const p of pointsPx) {
-                const dx = x - p.x;
-                const dy = y - p.y;
-                const d = Math.hypot(dx, dy);
-                const allowed = (radius + p.radius) * 0.82; // allow a little overlap
-                const s = d - allowed;
-                if (s < minScore) minScore = s;
+            const maxX = Math.max(0, halfW - extentX - edgePad);
+            const maxY = Math.max(0, halfH - extentY - edgePad);
+            if (maxX === 0 && maxY === 0) return { x: 0, y: 0 };
+
+            const evaluate = (x, y) => {
+              // Minimize overlap area with already-placed rectangles.
+              let overlapArea = 0;
+              let minGap = Infinity;
+
+              for (const p of placed) {
+                const dx = Math.abs(x - p.x);
+                const dy = Math.abs(y - p.y);
+                const ox = (extentX + p.extentX) - dx;
+                const oy = (extentY + p.extentY) - dy;
+                if (ox > 0 && oy > 0) overlapArea += ox * oy;
+
+                const d = Math.hypot(x - p.x, y - p.y);
+                const allowed = (radius + p.radius) * 0.82;
+                const gap = d - allowed;
+                if (gap < minGap) minGap = gap;
               }
-              const score = pointsPx.length ? minScore : 999;
-              if (score > best.score) best = { x, y, score };
+
+              if (!placed.length) minGap = 999;
+              const spreadiness = ((Math.abs(x) / (maxX || 1)) + (Math.abs(y) / (maxY || 1))) / 2;
+              return { overlapArea, minGap, spreadiness };
+            };
+
+            let best = { x: 0, y: 0, overlapArea: Infinity, minGap: -Infinity, spreadiness: -Infinity };
+
+            const tryCandidate = (x, y) => {
+              const e = evaluate(x, y);
+              const betterOverlap = e.overlapArea < best.overlapArea - 1;
+              const sameOverlap = Math.abs(e.overlapArea - best.overlapArea) <= 1;
+              const betterGap = e.minGap > best.minGap + 0.5;
+              const sameGap = Math.abs(e.minGap - best.minGap) <= 0.5;
+              const betterSpread = e.spreadiness > best.spreadiness + 0.02;
+              if (betterOverlap || (sameOverlap && (betterGap || (sameGap && betterSpread)))) {
+                best = { x, y, ...e };
+              }
+            };
+
+            // Mix of grid-ish and random candidates to fill whitespace.
+            const grid = [-1, -0.66, -0.33, 0, 0.33, 0.66, 1];
+            for (const gx of grid) {
+              for (const gy of grid) {
+                tryCandidate(gx * maxX, gy * maxY);
+              }
             }
-            pointsPx.push({ x: best.x, y: best.y, radius });
+
+            const tries = 140;
+            for (let k = 0; k < tries; k++) {
+              const x = (rng() * 2 - 1) * maxX;
+              const y = (rng() * 2 - 1) * maxY;
+              tryCandidate(x, y);
+            }
+
+            placed.push({ x: best.x, y: best.y, extentX, extentY, radius });
             return { x: best.x, y: best.y };
           };
 
@@ -1214,7 +1256,28 @@
             else img.addEventListener("load", applyAspect, { once: true });
 
             stage.appendChild(fig);
-            metas.push({ el: fig, media, img, x: 0, y: 0, r: (rng() * 2 - 1) * 16, width: 0, index: i });
+            const meta = { el: fig, media, img, x: 0, y: 0, r: (rng() * 2 - 1) * 16, width: 0, height: 0, index: i };
+            metas.push(meta);
+
+            img.addEventListener(
+              "load",
+              () => {
+                if (!laidOut) return;
+                // After real dimensions arrive, clamp position to stay inside bounds.
+                const stageW = stage.clientWidth || 1;
+                const stageH = stage.clientHeight || 1;
+                const edgePad = 12;
+                const halfW = (stageW * spread) / 2;
+                const halfH = (stageH * spread) / 2;
+                const extentX = meta.width ? meta.width / 2 : 120;
+                const extentY = meta.height ? meta.height / 2 : 120;
+                const maxX = Math.max(0, halfW - extentX - edgePad);
+                const maxY = Math.max(0, halfH - extentY - edgePad);
+                meta.x = clamp(meta.x, -maxX, maxX);
+                meta.y = clamp(meta.y, -maxY, maxY);
+              },
+              { once: true }
+            );
           }
 
           wrap.appendChild(stage);
@@ -1243,14 +1306,23 @@
                    const ih = m.img.naturalHeight || 3;
                    const ratio = iw / ih;
                    const mediaW = Math.sqrt(targetArea * ratio);
-                   const figW = Math.max(150, Math.min(mediaW + 24, w * 0.42));
+                   const mediaH = Math.sqrt(targetArea / ratio);
+                   const framePadX = 24; // matches .finalItem left+right padding
+                   const framePadY = 34; // top padding + thicker bottom polaroid strip
+                   const figW = Math.max(140, Math.min(mediaW + framePadX, w * 0.48));
+                   const figH = Math.max(140, Math.min(mediaH + framePadY, h * 0.62));
                    m.width = figW;
+                   m.height = figH;
                    m.el.style.width = `${figW.toFixed(1)}px`;
                  }
 
-                 for (const m of metas) {
-                   const radius = Math.max(70, m.width * 0.52);
-                   const pt = bestCandidatePointPx(w, h, radius);
+                 // Place largest first to reduce center clumping.
+                 const metasBySize = [...metas].sort((a, b) => (b.width * b.height) - (a.width * a.height));
+                 for (const m of metasBySize) {
+                   const extentX = Math.max(70, m.width / 2);
+                   const extentY = Math.max(70, m.height / 2);
+                   const radius = Math.max(extentX, extentY);
+                   const pt = bestCandidatePointPx(w, h, extentX, extentY, radius);
                    m.x = pt.x;
                    m.y = pt.y;
                  }
