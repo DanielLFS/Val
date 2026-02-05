@@ -1008,9 +1008,13 @@
 
       const body = document.createElement("div");
       body.className = "body";
-      const p = document.createElement("p");
-      p.textContent = "When you’re ready, click below.";
-      body.appendChild(p);
+      const ctaLines = Array.isArray(story?.cta?.body) ? story.cta.body : null;
+      const lines = ctaLines && ctaLines.length ? ctaLines : ["When you’re ready, click below."];
+      for (const line of lines) {
+        const p = document.createElement("p");
+        p.textContent = line;
+        body.appendChild(p);
+      }
       chapter.appendChild(body);
 
       const actions = document.createElement("div");

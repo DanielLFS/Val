@@ -96,11 +96,12 @@ window.VAL_CONFIG = {
       chapters: [
         {
           id: "intro",
-          title: "Hey you :)",
-          subtitle: "Scroll a little… I made this for you.",
+          title: "Hey baby :)",
+          subtitle: "This is a scroll-story page",
           showBadge: true,
           body: [
-            "This is a scroll-story page, as you scroll things will reveal themselves and float around.",
+            "Scroll a little… I made this for you.",
+            "As you scroll, things will reveal themselves and float around.",
           ],
           trackVh: 170,
           layout: "split",
@@ -108,12 +109,11 @@ window.VAL_CONFIG = {
         {
           id: "build",
           title: "A quick confession",
-          subtitle: "I love you!!",
+          subtitle: "You've made the past few weeks really special for me ",
           showBadge: false,
           body: [
-            "You've made the past few weeks really special for me ",
-            "I'd like to remind you that I want to keep spending my time with you! ",
-            "So here's a few reminders of the past 3ish months together :)",
+            "I love you!! and I made this refresher.",
+            "So here's to reliving some precious reminders of the past three-ish months together: :)",
           ],
           trackVh: 170,
           layout: "split",
@@ -122,6 +122,9 @@ window.VAL_CONFIG = {
       cta: {
         title: "One more thing…",
         subtitle: "Click when you’re ready.",
+        body: [
+          "When your ready, find the button below to see my question.",
+        ],
         label: "I have a question →",
         href: "question.html",
       },
