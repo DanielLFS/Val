@@ -158,7 +158,7 @@ window.VAL_CONFIG = {
             appearScale: 2.0,
             // Alternative sizing: make each polaroid frame height ~ % of the stage height.
             // (When set, this overrides targetCount sizing in "final" mode.)
-            targetHeightFrac: 0.42,
+            targetHeightFrac: 0.2,
             columns: 3,
             // If true, the order is a stable shuffle.
             shuffle: false,
