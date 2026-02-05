@@ -340,6 +340,12 @@ button {
   overflow: visible;
 }
 
+.chapterGalleryBare {
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  overflow-x: clip;
+}
+
 .paperLetter {
   background: var(--card);
   border: 1px solid var(--cardBorder);
@@ -351,6 +357,12 @@ button {
 
 .galleryHost {
   min-height: 200px;
+}
+
+.galleryHostBare {
+  display: grid;
+  place-items: center;
+  min-height: min(900px, 98vh);
 }
 
 .chapterGallery .galleryStage {
@@ -441,6 +453,14 @@ button {
 .finalStage {
   height: min(760px, 80vh);
   background: rgba(255, 255, 255, 0.18);
+}
+
+.finalStageBare {
+  width: 95vw;
+  height: 95vh;
+  max-width: 95vw;
+  max-height: 95vh;
+  background: transparent;
 }
 
 .finalItem {

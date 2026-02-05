@@ -150,6 +150,8 @@ window.VAL_CONFIG = {
             // - "spotlight"   : one big photo at a time (scroll advances)
             // - "timeline"    : vertical timeline list (optionally add captions)
             mode: "final",
+            // When true, this chapter renders as images-only (no title/subtitle/body).
+            bare: true,
             columns: 3,
             // If true, the order is a stable shuffle.
             shuffle: false,

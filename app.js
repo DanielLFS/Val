@@ -1038,6 +1038,9 @@
     for (let chapterIndex = 0; chapterIndex < chapters.length; chapterIndex++) {
       const ch = chapters[chapterIndex];
       const layout = (ch.layout || "split").toLowerCase();
+      const gcfgEarly = layout === "gallery" ? (ch.gallery || {}) : null;
+      const galleryBare = layout === "gallery" && gcfgEarly?.bare === true;
+
       const track = document.createElement("div");
       track.className = "chapterTrack";
       track.id = `chapter-${ch.id}`;
@@ -1050,6 +1053,7 @@
       chapter.className = "chapter";
       chapter.dataset.chapterId = ch.id;
       if (layout === "gallery") chapter.classList.add("chapterGallery");
+      if (galleryBare) chapter.classList.add("chapterGalleryBare");
 
       const header = document.createElement("header");
       header.className = "header";
@@ -1064,7 +1068,7 @@
       h.className = "title";
       h.textContent = ch.title || "";
 
-      const shouldShowInlinePicker = layout === "gallery" && Boolean(cfg.debug?.showGalleryModePicker);
+      const shouldShowInlinePicker = layout === "gallery" && !galleryBare && Boolean(cfg.debug?.showGalleryModePicker);
       if (shouldShowInlinePicker) {
         const row = document.createElement("div");
         row.className = "headerRow";
@@ -1098,17 +1102,25 @@
       // Gallery layout becomes: [gallery on background] [paper letter panel]
       let galleryHost = null;
       if (layout === "gallery") {
-        grid.style.gridTemplateColumns = "1.2fr 0.8fr";
         galleryHost = document.createElement("div");
         galleryHost.className = "galleryHost";
 
-        const paper = document.createElement("div");
-        paper.className = "paperLetter";
-        paper.appendChild(header);
-        paper.appendChild(bodyBox);
+        if (galleryBare) {
+          grid.style.gridTemplateColumns = "1fr";
+          galleryHost.classList.add("galleryHostBare");
+          left = galleryHost;
+          right = document.createElement("div");
+          right.hidden = true;
+        } else {
+          grid.style.gridTemplateColumns = "1.2fr 0.8fr";
+          const paper = document.createElement("div");
+          paper.className = "paperLetter";
+          paper.appendChild(header);
+          paper.appendChild(bodyBox);
 
-        left = galleryHost;
-        right = paper;
+          left = galleryHost;
+          right = paper;
+        }
       } else {
         chapter.appendChild(header);
       }
@@ -1145,32 +1157,39 @@
         if (mode === "final") {
           const stage = document.createElement("div");
           stage.className = "galleryStage finalStage";
+          if (galleryBare) stage.classList.add("finalStageBare");
 
           const metas = [];
-          const points = [];
 
-          const pickSpreadPoint = () => {
-            // normalized coords roughly covering ~90% of stage on desktop
-            // and ~80% on smaller screens (since stage itself is responsive).
-            const xRange = 0.45;
-            const yRange = 0.40;
+          // Layout is computed on first update once stage has real size.
+          let laidOut = false;
+          const pointsPx = [];
+
+          const spread = typeof gcfg.spread === "number" ? Math.max(0.75, Math.min(0.98, gcfg.spread)) : 0.95;
+          const targetCount = typeof gcfg.targetCount === "number" ? Math.max(8, Math.min(40, gcfg.targetCount)) : 20;
+
+          const bestCandidatePointPx = (w, h, radius) => {
+            const halfW = (w * spread) / 2;
+            const halfH = (h * spread) / 2;
             let best = { x: 0, y: 0, score: -1 };
-            const tries = 28;
+            const tries = 36;
             for (let k = 0; k < tries; k++) {
-              const x = (rng() * 2 - 1) * xRange;
-              const y = (rng() * 2 - 1) * yRange;
-              let minD = Infinity;
-              for (const p of points) {
+              const x = (rng() * 2 - 1) * halfW;
+              const y = (rng() * 2 - 1) * halfH;
+              let minScore = Infinity;
+              for (const p of pointsPx) {
                 const dx = x - p.x;
                 const dy = y - p.y;
                 const d = Math.hypot(dx, dy);
-                if (d < minD) minD = d;
+                const allowed = (radius + p.radius) * 0.82; // allow a little overlap
+                const s = d - allowed;
+                if (s < minScore) minScore = s;
               }
-              const score = points.length ? minD : 999;
+              const score = pointsPx.length ? minScore : 999;
               if (score > best.score) best = { x, y, score };
             }
-            points.push({ x: best.x, y: best.y });
-            return { nx: best.x, ny: best.y };
+            pointsPx.push({ x: best.x, y: best.y, radius });
+            return { x: best.x, y: best.y };
           };
 
           for (let i = 0; i < images.length; i++) {
@@ -1194,12 +1213,8 @@
             if (img.complete) applyAspect();
             else img.addEventListener("load", applyAspect, { once: true });
 
-            const { nx, ny } = pickSpreadPoint();
-            const r = (rng() * 2 - 1) * 16;
-            const endScale = 0.52 + rng() * 0.18;
-
             stage.appendChild(fig);
-            metas.push({ el: fig, nx, ny, r, endScale, index: i });
+            metas.push({ el: fig, media, img, x: 0, y: 0, r: (rng() * 2 - 1) * 16, width: 0, index: i });
           }
 
           wrap.appendChild(stage);
@@ -1218,6 +1233,31 @@
               const w = stage.clientWidth || 1;
               const h = stage.clientHeight || 1;
 
+               if (!laidOut && w > 20 && h > 20) {
+                 // Target: each photo roughly covers stageArea/20 (like you asked).
+                 const stageArea = w * h;
+                 const targetArea = stageArea / targetCount;
+
+                 for (const m of metas) {
+                   const iw = m.img.naturalWidth || 4;
+                   const ih = m.img.naturalHeight || 3;
+                   const ratio = iw / ih;
+                   const mediaW = Math.sqrt(targetArea * ratio);
+                   const figW = Math.max(150, Math.min(mediaW + 24, w * 0.42));
+                   m.width = figW;
+                   m.el.style.width = `${figW.toFixed(1)}px`;
+                 }
+
+                 for (const m of metas) {
+                   const radius = Math.max(70, m.width * 0.52);
+                   const pt = bestCandidatePointPx(w, h, radius);
+                   m.x = pt.x;
+                   m.y = pt.y;
+                 }
+
+                 laidOut = true;
+               }
+
               const span = Math.max(0.0001, 1 - depositDur);
 
               for (let i = 0; i < n; i++) {
@@ -1234,13 +1274,10 @@
                 const landed = p01 >= end;
                 const active = p01 >= start && p01 < end;
 
-                const lx = m.nx * w;
-                const ly = m.ny * h;
-
-                const x = lerp(0, lx, eased);
-                const y = lerp(46, ly, eased);
+                const x = lerp(0, m.x, eased);
+                const y = lerp(28, m.y, eased);
                 const rot = lerp(0, m.r, eased);
-                const scale = lerp(1.05, m.endScale, eased);
+                const scale = lerp(1.65, 1.0, eased);
 
                 const opacity = landed ? 1 : active ? 1 : appearT;
                 m.el.style.opacity = `${opacity.toFixed(3)}`;
