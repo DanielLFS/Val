@@ -47,6 +47,16 @@ window.VAL_CONFIG = {
   // Optional footer hint text
   hintText: "Made with love (and a tiny bit of JavaScript).",
 
+  // Debug/testing helpers
+  // - Set galleryModeOverride to force ALL gallery chapters to use a mode
+  // - Or use a URL param on index.html: ?gallery=stack (or orbit/grid/spotlight/etc)
+  debug: {
+    galleryModeOverride: "",
+    // Shows a small bottom-right dropdown on the story page
+    // to quickly test gallery modes (updates ?gallery=... and reloads).
+    showGalleryModePicker: true,
+  },
+
   // If true, the user can always choose "No" and it will be respected.
   // If false, the flow can be playful, but keep it kind.
   allowNo: true,
@@ -129,6 +139,17 @@ window.VAL_CONFIG = {
           trackVh: 260,
           layout: "gallery",
           gallery: {
+            // Gallery modes you can test:
+            // - "final"       : conveyor reveal → big polaroid → shrink + scatter collage
+            // - "grid"        : images pop in sequentially in a grid
+            // - "grid-shuffle": same, but stable-shuffled order
+            // - "orbit"       : one-at-a-time "jewelry display" orbit (behind → front → behind)
+            // - "stack"       : printed-photo stack (your #2 idea)
+            // - "polaroid"    : scattered polaroids that land in
+            // - "conveyor"    : photos drift upward; new ones enter bottom, exit top
+            // - "spotlight"   : one big photo at a time (scroll advances)
+            // - "timeline"    : vertical timeline list (optionally add captions)
+            mode: "final",
             columns: 3,
             // If true, the order is a stable shuffle.
             shuffle: false,

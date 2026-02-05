@@ -915,6 +915,51 @@
     const trackEls = [];
     const galleries = [];
 
+    const GALLERY_MODES = new Set([
+      "final",
+      "grid",
+      "grid-shuffle",
+      "orbit",
+      "stack",
+      "polaroid",
+      "conveyor",
+      "spotlight",
+      "timeline",
+    ]);
+
+    function getGalleryModeOverride() {
+      const sp = new URLSearchParams(window.location.search || "");
+      const urlMode = (sp.get("gallery") || "").trim().toLowerCase();
+      const cfgMode = (cfg.debug?.galleryModeOverride || "").trim().toLowerCase();
+      const mode = urlMode || cfgMode;
+      return GALLERY_MODES.has(mode) ? mode : "";
+    }
+
+    function hashString(str) {
+      let h = 2166136261;
+      const s = String(str || "");
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return h >>> 0;
+    }
+
+    function mulberry32(seed) {
+      let t = seed >>> 0;
+      return () => {
+        t += 0x6d2b79f5;
+        let x = t;
+        x = Math.imul(x ^ (x >>> 15), x | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function clamp01(x) {
+      return Math.max(0, Math.min(1, x));
+    }
+
     function stableShuffle(list, seed) {
       const arr = Array.isArray(list) ? [...list] : [];
       let s = 0;
@@ -929,6 +974,65 @@
         arr[j] = tmp;
       }
       return arr;
+    }
+
+    const galleryModeOverride = getGalleryModeOverride();
+
+    function buildGalleryModePicker() {
+      const picker = document.createElement("div");
+      picker.className = "galleryModePicker";
+
+      const label = document.createElement("div");
+      label.className = "galleryModePickerLabel";
+      label.textContent = "Gallery mode";
+
+      const select = document.createElement("select");
+      select.className = "galleryModePickerSelect";
+
+      const sp = new URLSearchParams(window.location.search || "");
+      const currentUrlMode = (sp.get("gallery") || "").trim().toLowerCase();
+      const currentCfgMode = (cfg.debug?.galleryModeOverride || "").trim().toLowerCase();
+
+      const optDefault = document.createElement("option");
+      optDefault.value = "";
+      optDefault.textContent = "(chapter setting)";
+      select.appendChild(optDefault);
+
+      const orderedModes = [
+        "final",
+        "conveyor",
+        "polaroid",
+        "grid",
+        "grid-shuffle",
+        "stack",
+        "orbit",
+        "spotlight",
+        "timeline",
+      ].filter((m) => GALLERY_MODES.has(m));
+
+      for (const mode of orderedModes) {
+        const opt = document.createElement("option");
+        opt.value = mode;
+        opt.textContent = (mode === "conveyor" || mode === "polaroid") ? `${mode} ♥` : mode;
+        select.appendChild(opt);
+      }
+
+      select.value = GALLERY_MODES.has(currentUrlMode)
+        ? currentUrlMode
+        : (GALLERY_MODES.has(currentCfgMode) ? currentCfgMode : "");
+
+      select.addEventListener("change", () => {
+        const v = (select.value || "").trim().toLowerCase();
+        const url = new URL(window.location.href);
+        if (!v) url.searchParams.delete("gallery");
+        else url.searchParams.set("gallery", v);
+        history.replaceState(null, "", url.toString());
+        window.location.reload();
+      });
+
+      picker.appendChild(label);
+      picker.appendChild(select);
+      return picker;
     }
 
     for (let chapterIndex = 0; chapterIndex < chapters.length; chapterIndex++) {
@@ -958,10 +1062,21 @@
       const h = document.createElement("h2");
       h.className = "title";
       h.textContent = ch.title || "";
+
+      const shouldShowInlinePicker = layout === "gallery" && Boolean(cfg.debug?.showGalleryModePicker);
+      if (shouldShowInlinePicker) {
+        const row = document.createElement("div");
+        row.className = "headerRow";
+        row.appendChild(h);
+        row.appendChild(buildGalleryModePicker());
+        header.appendChild(row);
+      } else {
+        header.appendChild(h);
+      }
+
       const sub = document.createElement("p");
       sub.className = "subtitle";
       sub.textContent = ch.subtitle || "";
-      header.appendChild(h);
       header.appendChild(sub);
       chapter.appendChild(header);
 
@@ -983,34 +1098,354 @@
         const gcfg = ch.gallery || {};
         const cols = Number.isFinite(gcfg.columns) ? Math.max(2, Math.min(6, gcfg.columns)) : 3;
         const rawImages = Array.isArray(gcfg.images) ? gcfg.images.filter(Boolean) : [];
-        const images = gcfg.shuffle ? stableShuffle(rawImages, ch.id) : rawImages;
+        const requestedMode = String(gcfg.mode || "").trim().toLowerCase();
+        const baseMode = requestedMode && GALLERY_MODES.has(requestedMode)
+          ? requestedMode
+          : gcfg.shuffle
+            ? "grid-shuffle"
+            : "grid";
+        const mode = galleryModeOverride || baseMode;
+        const images = mode === "grid-shuffle" || gcfg.shuffle ? stableShuffle(rawImages, ch.id) : rawImages;
 
         const wrap = document.createElement("div");
-        wrap.className = "galleryWrap";
+        wrap.className = `galleryWrap galleryMode-${mode}`;
 
-        const gridEl = document.createElement("div");
-        gridEl.className = "galleryGrid";
-        gridEl.style.setProperty("--cols", String(cols));
+        // Mode builders register an update(progress01) handler.
+        const rng = mulberry32(hashString(ch.id));
 
-        const items = [];
-        for (const src of images) {
-          const fig = document.createElement("figure");
-          fig.className = "galleryItem";
-
+        const makeImg = (src) => {
           const img = document.createElement("img");
           img.src = src;
           img.alt = "";
           img.loading = "lazy";
           img.decoding = "async";
-          fig.appendChild(img);
+          return img;
+        };
 
-          gridEl.appendChild(fig);
-          items.push(fig);
+        if (mode === "final") {
+          const stage = document.createElement("div");
+          stage.className = "galleryStage finalStage";
+
+          const metas = [];
+          const points = [];
+
+          const pickSpreadPoint = () => {
+            // normalized coords roughly covering ~90% of stage on desktop
+            // and ~80% on smaller screens (since stage itself is responsive).
+            const xRange = 0.45;
+            const yRange = 0.40;
+            let best = { x: 0, y: 0, score: -1 };
+            const tries = 28;
+            for (let k = 0; k < tries; k++) {
+              const x = (rng() * 2 - 1) * xRange;
+              const y = (rng() * 2 - 1) * yRange;
+              let minD = Infinity;
+              for (const p of points) {
+                const dx = x - p.x;
+                const dy = y - p.y;
+                const d = Math.hypot(dx, dy);
+                if (d < minD) minD = d;
+              }
+              const score = points.length ? minD : 999;
+              if (score > best.score) best = { x, y, score };
+            }
+            points.push({ x: best.x, y: best.y });
+            return { nx: best.x, ny: best.y };
+          };
+
+          for (let i = 0; i < images.length; i++) {
+            const fig = document.createElement("figure");
+            fig.className = "finalItem";
+
+            const media = document.createElement("div");
+            media.className = "finalMedia";
+            const img = makeImg(images[i]);
+            media.appendChild(img);
+            fig.appendChild(media);
+
+            const applyAspect = () => {
+              const w = img.naturalWidth;
+              const h = img.naturalHeight;
+              if (w > 0 && h > 0) {
+                // Makes the polaroid “window” match the photo.
+                media.style.aspectRatio = `${w} / ${h}`;
+              }
+            };
+            if (img.complete) applyAspect();
+            else img.addEventListener("load", applyAspect, { once: true });
+
+            const { nx, ny } = pickSpreadPoint();
+            const r = (rng() * 2 - 1) * 16;
+            const endScale = 0.52 + rng() * 0.18;
+
+            stage.appendChild(fig);
+            metas.push({ el: fig, nx, ny, r, endScale, index: i });
+          }
+
+          wrap.appendChild(stage);
+          left.appendChild(wrap);
+
+          const depositDurRaw = typeof gcfg.depositDur === "number" ? gcfg.depositDur : 0.15;
+          const depositDur = Math.max(0.08, Math.min(0.32, depositDurRaw));
+
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              const n = metas.length;
+              if (!n) return;
+
+              // Measure stage each frame (cheap) so the scatter fills the stage.
+              const w = stage.clientWidth || 1;
+              const h = stage.clientHeight || 1;
+
+              const span = Math.max(0.0001, 1 - depositDur);
+
+              for (let i = 0; i < n; i++) {
+                const m = metas[i];
+
+                const start = n === 1 ? 0 : (i / (n - 1)) * span;
+                const end = start + depositDur;
+
+                const preFade = 0.04;
+                const appearT = clamp01((p01 - (start - preFade)) / preFade);
+                const t = clamp01((p01 - start) / depositDur);
+                const eased = 1 - Math.pow(1 - t, 3);
+
+                const landed = p01 >= end;
+                const active = p01 >= start && p01 < end;
+
+                const lx = m.nx * w;
+                const ly = m.ny * h;
+
+                const x = lerp(0, lx, eased);
+                const y = lerp(46, ly, eased);
+                const rot = lerp(0, m.r, eased);
+                const scale = lerp(1.05, m.endScale, eased);
+
+                const opacity = landed ? 1 : active ? 1 : appearT;
+                m.el.style.opacity = `${opacity.toFixed(3)}`;
+                m.el.style.transform = `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(
+                  1
+                )}px) rotate(${rot.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+                m.el.style.zIndex = active ? "999" : String(10 + i);
+              }
+            },
+          });
+        } else if (mode === "spotlight") {
+          const stage = document.createElement("div");
+          stage.className = "galleryStage spotlightStage";
+          const img = makeImg(images[0] || "");
+          img.className = "spotlightImg";
+          stage.appendChild(img);
+
+          const counter = document.createElement("div");
+          counter.className = "galleryCounter";
+          stage.appendChild(counter);
+
+          wrap.appendChild(stage);
+          left.appendChild(wrap);
+
+          let current = -1;
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              const n = images.length;
+              if (!n) return;
+              const idx = Math.max(0, Math.min(n - 1, Math.floor(p01 * n)));
+              if (idx !== current) {
+                current = idx;
+                img.classList.remove("isShown");
+                // force reflow for transition
+                void img.offsetHeight;
+                img.src = images[idx];
+                img.classList.add("isShown");
+              }
+              counter.textContent = `${idx + 1} / ${n}`;
+            },
+          });
+        } else if (mode === "orbit") {
+          const stage = document.createElement("div");
+          stage.className = "galleryStage orbitStage";
+          const img = makeImg(images[0] || "");
+          img.className = "orbitImg";
+          stage.appendChild(img);
+          wrap.appendChild(stage);
+          left.appendChild(wrap);
+
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              const n = images.length;
+              if (!n) return;
+              const t = p01 * n;
+              const idx = Math.max(0, Math.min(n - 1, Math.floor(t)));
+              const local = t - idx; // 0..1
+
+              const phase = local * Math.PI * 2;
+              const depth = (Math.cos(phase) + 1) / 2; // 1 back-ish, 0 front-ish
+              const front = 1 - depth;
+
+              const x = -170 + local * 340;
+              const y = -18 * Math.sin(phase);
+              const scale = 0.78 + front * 0.42;
+              const rotY = (-28 + local * 56);
+              const blur = 2.2 * depth;
+              const opacity = 0.55 + front * 0.45;
+
+              if (img.src !== images[idx]) img.src = images[idx];
+              img.style.opacity = `${opacity.toFixed(3)}`;
+              img.style.filter = `blur(${blur.toFixed(2)}px)`;
+              img.style.transform = `translate(-50%, -50%) translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) rotateY(${rotY.toFixed(
+                1
+              )}deg) scale(${scale.toFixed(3)})`;
+              img.style.zIndex = String(10 + Math.round(front * 10));
+            },
+          });
+        } else if (mode === "timeline") {
+          const list = document.createElement("div");
+          list.className = "timelineList";
+
+          const captions = Array.isArray(gcfg.captions) ? gcfg.captions : [];
+          const items = [];
+          for (let i = 0; i < images.length; i++) {
+            const row = document.createElement("div");
+            row.className = "timelineItem";
+
+            const media = document.createElement("div");
+            media.className = "timelineMedia";
+            media.appendChild(makeImg(images[i]));
+            row.appendChild(media);
+
+            const text = document.createElement("div");
+            text.className = "timelineText";
+            const cap = captions[i];
+            if (cap) {
+              const p = document.createElement("p");
+              p.textContent = cap;
+              text.appendChild(p);
+            }
+            row.appendChild(text);
+
+            list.appendChild(row);
+            items.push(row);
+          }
+
+          wrap.appendChild(list);
+          left.appendChild(wrap);
+
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              const n = items.length;
+              const revealCount = Math.min(n, Math.floor(p01 * (n + 1)));
+              for (let i = 0; i < n; i++) items[i].classList.toggle("isRevealed", i < revealCount);
+            },
+          });
+        } else if (mode === "polaroid" || mode === "stack") {
+          const stage = document.createElement("div");
+          stage.className = `galleryStage ${mode}Stage`;
+          const items = [];
+
+          for (let i = 0; i < images.length; i++) {
+            const fig = document.createElement("figure");
+            fig.className = `polaroidItem ${mode === "stack" ? "stackItem" : "scatterItem"}`;
+
+            const img = makeImg(images[i]);
+            fig.appendChild(img);
+
+            // seeded layout
+            const maxX = mode === "stack" ? 18 : 120;
+            const maxY = mode === "stack" ? 16 : 72;
+            const x = (rng() * 2 - 1) * maxX;
+            const y = (rng() * 2 - 1) * maxY;
+            const r = (rng() * 2 - 1) * (mode === "stack" ? 6 : 14);
+            fig.style.setProperty("--x", `${x.toFixed(1)}px`);
+            fig.style.setProperty("--y", `${y.toFixed(1)}px`);
+            fig.style.setProperty("--r", `${r.toFixed(1)}deg`);
+            fig.style.zIndex = String(10 + i);
+
+            stage.appendChild(fig);
+            items.push(fig);
+          }
+
+          wrap.appendChild(stage);
+          left.appendChild(wrap);
+
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              const n = items.length;
+              const revealCount = Math.min(n, Math.floor(p01 * (n + 1)));
+              for (let i = 0; i < n; i++) items[i].classList.toggle("isRevealed", i < revealCount);
+            },
+          });
+        } else if (mode === "conveyor") {
+          const stage = document.createElement("div");
+          stage.className = "galleryStage conveyorStage";
+          const metas = [];
+
+          for (let i = 0; i < images.length; i++) {
+            const fig = document.createElement("figure");
+            fig.className = "conveyorItem";
+            fig.appendChild(makeImg(images[i]));
+            stage.appendChild(fig);
+
+            metas.push({
+              el: fig,
+              t: images.length === 1 ? 0 : i / (images.length - 1),
+              x: (rng() * 2 - 1) * 120,
+              r: (rng() * 2 - 1) * 7,
+              s: 0.94 + rng() * 0.14,
+            });
+          }
+
+          wrap.appendChild(stage);
+          left.appendChild(wrap);
+
+          const windowT = typeof gcfg.windowT === "number" ? Math.max(0.12, Math.min(0.6, gcfg.windowT)) : 0.28;
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              for (const m of metas) {
+                const rel = (m.t - p01) / windowT; // 0 center, + below, - above
+                const y = rel * 520;
+                const a = clamp01(1 - Math.abs(rel) / 1.15);
+                const scale = (m.s * (0.92 + (1 - Math.abs(rel)) * 0.18));
+                m.el.style.opacity = `${a.toFixed(3)}`;
+                m.el.style.transform = `translate(-50%, -50%) translate(${m.x.toFixed(1)}px, ${y.toFixed(
+                  1
+                )}px) rotate(${m.r.toFixed(1)}deg) scale(${scale.toFixed(3)})`;
+                m.el.style.pointerEvents = a > 0.2 ? "auto" : "none";
+              }
+            },
+          });
+        } else {
+          // default: grid
+          const gridEl = document.createElement("div");
+          gridEl.className = "galleryGrid";
+          gridEl.style.setProperty("--cols", String(cols));
+
+          const items = [];
+          for (const src of images) {
+            const fig = document.createElement("figure");
+            fig.className = "galleryItem";
+            fig.appendChild(makeImg(src));
+            gridEl.appendChild(fig);
+            items.push(fig);
+          }
+
+          wrap.appendChild(gridEl);
+          left.appendChild(wrap);
+
+          galleries.push({
+            trackEl: track,
+            update: (p01) => {
+              const n = items.length;
+              const revealCount = Math.min(n, Math.floor(p01 * (n + 1)));
+              for (let i = 0; i < n; i++) items[i].classList.toggle("isRevealed", i < revealCount);
+            },
+          });
         }
-
-        wrap.appendChild(gridEl);
-        left.appendChild(wrap);
-        galleries.push({ trackEl: track, items });
       } else {
         const key = ch.imageKey;
         const src = key ? cfg.images?.[key] : null;
@@ -1115,9 +1550,6 @@
       floatNodes.set(f.id, node);
     }
 
-    function clamp01(x) {
-      return Math.max(0, Math.min(1, x));
-    }
     function lerp(a, b, t) {
       return a + (b - a) * t;
     }
@@ -1188,17 +1620,10 @@
         node.style.transform = `translate(-50%, -50%) translate(${tr.x.toFixed(0)}px, ${tr.y.toFixed(0)}px) rotate(${tr.rot.toFixed(1)}deg) scale(${tr.scale.toFixed(3)})`;
       }
 
-      // Reveal gallery items as you scroll through that chapter's track.
+      // Gallery effects (mode-specific)
       for (const g of galleries) {
         const p = prefersReducedMotion() ? 1 : trackProgress(g.trackEl);
-        const n = g.items.length;
-        const revealCount = Math.min(n, Math.floor(p * (n + 1)));
-        for (let i = 0; i < n; i++) {
-          const el = g.items[i];
-          if (!el) continue;
-          const should = i < revealCount;
-          el.classList.toggle("isRevealed", should);
-        }
+        if (typeof g.update === "function") g.update(p);
       }
 
       if (!prefersReducedMotion()) requestAnimationFrame(update);

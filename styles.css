@@ -339,6 +339,293 @@ button {
   margin-top: 10px;
 }
 
+.galleryModePicker {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.galleryModePickerLabel {
+  font-size: 12px;
+  line-height: 1.1;
+  color: rgba(18, 19, 26, 0.72);
+}
+
+.galleryModePickerSelect {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(18, 19, 26, 0.9);
+}
+
+
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.headerRow .title {
+  margin: 0;
+}
+
+.headerRow .galleryModePicker {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  border-radius: 14px;
+}
+
+.headerRow .galleryModePickerSelect {
+  padding: 7px 9px;
+  border-radius: 12px;
+}
+
+@media (max-width: 720px) {
+  .headerRow {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.galleryStage {
+  position: relative;
+  width: 100%;
+  height: min(520px, 56vh);
+  border-radius: 18px;
+  overflow: clip;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* Final (conveyor → polaroid scatter collage) */
+.finalStage {
+  height: min(760px, 80vh);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.finalItem {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(560px, 92%);
+  margin: 0;
+  padding: 12px 12px 22px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.16);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+.finalMedia {
+  width: 100%;
+  aspect-ratio: 4 / 3; /* default until image loads */
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(245, 245, 245, 0.95);
+}
+
+.finalMedia img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-orientation: from-image;
+}
+
+.galleryCounter {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: rgba(18, 19, 26, 0.75);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* Spotlight */
+.spotlightStage {
+  display: grid;
+  place-items: center;
+}
+
+.spotlightImg {
+  width: min(860px, 96%);
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.25;
+  transform: scale(0.985);
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.spotlightImg.isShown {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Orbit */
+.orbitStage {
+  perspective: 900px;
+}
+
+.orbitImg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(560px, 92%);
+  max-height: 92%;
+  object-fit: contain;
+  border-radius: 18px;
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  transform-style: preserve-3d;
+  will-change: transform, filter, opacity;
+}
+
+/* Polaroid / Stack */
+.polaroidStage,
+.stackStage {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.polaroidItem {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(240px, 46vw);
+  padding: 10px 10px 18px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  --x: 0px;
+  --y: 0px;
+  --r: 0deg;
+  --revealY: 14px;
+  --revealS: 0.985;
+  opacity: 0;
+  transform: translate(-50%, -50%) translate(var(--x), var(--y)) rotate(var(--r)) translateY(var(--revealY))
+    scale(var(--revealS));
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.polaroidItem img {
+  display: block;
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.polaroidItem.isRevealed {
+  opacity: 1;
+  --revealY: 0px;
+  --revealS: 1;
+}
+
+.stackItem {
+  width: min(300px, 58vw);
+}
+
+.stackItem img {
+  height: 200px;
+}
+
+/* Conveyor */
+.conveyorStage {
+  overflow: hidden;
+}
+
+.conveyorItem {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(420px, 78vw);
+  margin: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.14);
+  will-change: transform, opacity;
+}
+
+.conveyorItem img {
+  width: 100%;
+  height: 240px;
+  object-fit: cover;
+  display: block;
+}
+
+/* Timeline */
+.timelineList {
+  display: grid;
+  gap: 12px;
+}
+
+.timelineItem {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: center;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 260ms ease, transform 260ms ease;
+}
+
+.timelineItem.isRevealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.timelineMedia {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.timelineMedia img {
+  width: 100%;
+  height: 110px;
+  object-fit: cover;
+  display: block;
+}
+
+.timelineText p {
+  margin: 0;
+  color: rgba(18, 19, 26, 0.78);
+}
+
+@media (max-width: 720px) {
+  .galleryStage {
+    height: min(540px, 62vh);
+  }
+  .timelineItem {
+    grid-template-columns: 1fr;
+  }
+  .timelineMedia img {
+    height: 150px;
+  }
+}
+
 .galleryGrid {
   --cols: 3;
   display: grid;
