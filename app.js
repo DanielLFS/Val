@@ -1287,7 +1287,15 @@
           const depositDur = Math.max(0.08, Math.min(0.32, depositDurRaw));
 
           const appearScaleRaw = typeof gcfg.appearScale === "number" ? gcfg.appearScale : 1.65;
-          const appearScale = clamp(appearScaleRaw, 1.0, 3.0);
+          const appearScale = clamp(appearScaleRaw, 1.0, 6.0);
+
+          const targetHeightFracRaw =
+            typeof gcfg.targetHeightFrac === "number"
+              ? gcfg.targetHeightFrac
+              : typeof gcfg.targetHeightPercent === "number"
+                ? gcfg.targetHeightPercent / 100
+                : null;
+          const targetHeightFrac = typeof targetHeightFracRaw === "number" ? clamp(targetHeightFracRaw, 0.12, 0.9) : null;
 
           galleries.push({
             trackEl: track,
@@ -1300,37 +1308,59 @@
               const h = stage.clientHeight || 1;
 
                if (!laidOut && w > 20 && h > 20) {
-                 // Target: each photo roughly covers stageArea/20 (like you asked).
-                 const stageArea = w * h;
-                  const targetFrameArea = stageArea / targetCount;
+                 const framePadX = 24; // matches .finalItem left+right padding
+                 const framePadY = 34; // top padding + thicker bottom polaroid strip
 
-                 for (const m of metas) {
-                   const iw = m.img.naturalWidth || 4;
-                   const ih = m.img.naturalHeight || 3;
-                   const ratio = iw / ih;
-                   const framePadX = 24; // matches .finalItem left+right padding
-                   const framePadY = 34; // top padding + thicker bottom polaroid strip
+                 if (targetHeightFrac != null) {
+                   // Size each frame so its total height is ~ (targetHeightFrac * stageHeight),
+                   // then derive width from the image ratio.
+                   const targetFigH = h * targetHeightFrac;
+                   for (const m of metas) {
+                     const iw = m.img.naturalWidth || 4;
+                     const ih = m.img.naturalHeight || 3;
+                     const ratio = Math.max(0.2, Math.min(5, iw / ih));
 
-                    // Solve for k such that (mediaW+padX)*(mediaH+padY) ~= targetFrameArea,
-                    // with mediaW = k*sqrt(ratio), mediaH = k/sqrt(ratio).
-                    const a = Math.sqrt(Math.max(0.05, ratio));
-                    const b = 1 / a;
-                    const B = a * framePadY + framePadX * b;
-                    const C = framePadX * framePadY - targetFrameArea;
-                    const disc = Math.max(0, B * B - 4 * C);
-                    const k = Math.max(0, (-B + Math.sqrt(disc)) / 2);
+                     // Want: (figW - padX) / ratio + padY ~= targetFigH
+                     // Solve: figW ~= (targetFigH - padY) * ratio + padX
+                     const figWFromH = (targetFigH - framePadY) * ratio + framePadX;
+                     const figW = Math.max(120, Math.min(figWFromH, w * 0.72));
+                     const figH = Math.max(120, Math.min(((figW - framePadX) / ratio) + framePadY, h * 0.88));
 
-                    const mediaW = k * a;
-                    const mediaH = k * b;
-                    const figWRaw = mediaW + framePadX;
-                    const figHRaw = mediaH + framePadY;
+                     m.width = figW;
+                     m.height = figH;
+                     m.el.style.width = `${figW.toFixed(1)}px`;
+                   }
+                 } else {
+                   // Target: each photo roughly covers stageArea/targetCount.
+                   const stageArea = w * h;
+                   const targetFrameArea = stageArea / targetCount;
 
-                    const figW = Math.max(120, Math.min(figWRaw, w * 0.46));
-                    const figH = Math.max(120, Math.min(figHRaw, h * 0.58));
+                   for (const m of metas) {
+                     const iw = m.img.naturalWidth || 4;
+                     const ih = m.img.naturalHeight || 3;
+                     const ratio = iw / ih;
 
-                    m.width = figW;
-                    m.height = figH;
-                    m.el.style.width = `${figW.toFixed(1)}px`;
+                     // Solve for k such that (mediaW+padX)*(mediaH+padY) ~= targetFrameArea,
+                     // with mediaW = k*sqrt(ratio), mediaH = k/sqrt(ratio).
+                     const a = Math.sqrt(Math.max(0.05, ratio));
+                     const b = 1 / a;
+                     const B = a * framePadY + framePadX * b;
+                     const C = framePadX * framePadY - targetFrameArea;
+                     const disc = Math.max(0, B * B - 4 * C);
+                     const k = Math.max(0, (-B + Math.sqrt(disc)) / 2);
+
+                     const mediaW = k * a;
+                     const mediaH = k * b;
+                     const figWRaw = mediaW + framePadX;
+                     const figHRaw = mediaH + framePadY;
+
+                     const figW = Math.max(120, Math.min(figWRaw, w * 0.46));
+                     const figH = Math.max(120, Math.min(figHRaw, h * 0.58));
+
+                     m.width = figW;
+                     m.height = figH;
+                     m.el.style.width = `${figW.toFixed(1)}px`;
+                   }
                  }
 
                  // Place largest first to reduce center clumping.
