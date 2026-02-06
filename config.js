@@ -69,21 +69,23 @@ window.VAL_CONFIG = {
   chase: {
     enabled: true,
     // both buttons can dodge until they "give up"
-    yesDodges: 10,
+    yesDodges: 11,
     noDodges: 10,
     // how close the pointer needs to get before it dodges
     triggerRadiusPx: 60,
     // max move distance per dodge
     dodgeDistancePx: 120,
-    // playful voice lines
-    taunts: [
-      "Hehe, not that fast…",
-      "You gotta *mean* it 😌",
-      "Scrolling is required for this quest.",
-      "Skill issue (jk).",
-      "Okay okay, I’ll chill… soon.",
-    ],
+    // Taunts show ON the buttons as they dodge.
+    // Edit the .txt files to add/remove/reorder lines — one taunt per line.
+    yesTauntsFile: "assets/text/yes-taunts.txt",
+    noTauntsFile: "assets/text/no-taunts.txt",
+    // Inline fallbacks (used only if the file can't load).
+    yesTaunts: ["Not yet! 😏", "Almost…", "Try harder 💪", "So close!", "Nope 🙃"],
+    noTaunts: ["Hehe 😌", "Nuh uh", "Skill issue (jk)", "Keep trying…", "You sure?"],
+    // Shared fallback taunts file (used if per-button files aren't set).
     tauntsFile: "assets/text/chase-taunts.txt",
+    // Shown at bottom once the first button stops dodging.
+    readyJoke: "tiktok brain joke",
     // Testing-only: show extra direct links (recommended during development)
     showSeriousLinks: false,
   },
@@ -200,7 +202,7 @@ window.VAL_CONFIG = {
         title: "One more thing…",
         subtitle: "Click when you’re ready.",
         body: [
-          "When your ready, find the button below to see my question.",
+          "When your ready, find the button below.",
         ],
         label: "I have a question →",
         href: "question.html",
@@ -223,7 +225,7 @@ window.VAL_CONFIG = {
 
     question: {
       title: "Will you be my Valentine?",
-      subtitle: "Catch a button (gently).",
+      subtitle: "Catch a button.",
       body: [
         "Okay… here’s the question.",
         "Both buttons are feeling shy today.",

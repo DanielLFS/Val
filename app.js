@@ -2088,13 +2088,24 @@
     const noDodges = Math.max(0, chaseCfg.noDodges ?? 0);
     const radius = Math.max(50, chaseCfg.triggerRadiusPx ?? 110);
     const dodgeDist = Math.max(60, chaseCfg.dodgeDistancePx ?? 170);
-    let taunts = Array.isArray(chaseCfg.taunts) && chaseCfg.taunts.length ? chaseCfg.taunts : ["Hehe."];
-    let tauntIndex = 0;
+
+    // Per-button taunts (shown ON the button itself when it dodges).
+    const sharedTaunts = Array.isArray(chaseCfg.taunts) && chaseCfg.taunts.length ? chaseCfg.taunts : ["Hehe."];
+    let yesTaunts = Array.isArray(chaseCfg.yesTaunts) && chaseCfg.yesTaunts.length ? chaseCfg.yesTaunts : sharedTaunts;
+    let noTaunts = Array.isArray(chaseCfg.noTaunts) && chaseCfg.noTaunts.length ? chaseCfg.noTaunts : sharedTaunts;
+    let yesTauntIdx = 0;
+    let noTauntIdx = 0;
     let tauntsUsed = false;
 
+    // Original button labels (restored when the button settles).
+    const yesOrigLabel = q?.yesLabel || "Yes 💖";
+    const noOrigLabel = q?.noLabel || "Not this time";
+    const readyJoke = typeof chaseCfg.readyJoke === "string" ? chaseCfg.readyJoke : "";
+
+    // Dodge count = taunt count (auto from file/inline). Config yesDodges/noDodges is only a fallback.
     const state = {
-      yes: { dodges: 0, max: yesDodges, ready: yesDodges === 0 },
-      no: { dodges: 0, max: noDodges, ready: noDodges === 0 },
+      yes: { dodges: 0, max: yesTaunts.length, ready: yesTaunts.length === 0 },
+      no: { dodges: 0, max: noTaunts.length, ready: noTaunts.length === 0 },
     };
 
     // No-confirmation loop
@@ -2137,26 +2148,22 @@
       if (!confirmPrompts.length) return;
       confirmUsed = true;
       const idx = Math.min(stepIndex, confirmPrompts.length - 1);
-      setTaunt(confirmPrompts[idx]);
+
+      // Put the prompt text on the No button itself.
+      noBtn.textContent = confirmPrompts[idx];
+
       const scale = Math.min(3.0, yesScaleStart + (idx + 1) * yesScaleStep);
       setYesBaseScale(scale);
-      // Keep the first confirmation at normal size, then shrink a bit each click.
       const noScale = Math.max(0.65, noScaleStart - idx * noScaleStep);
       setNoBaseScale(noScale);
       popYes();
 
-      if (noConfirm.noLabelDuring) noBtn.textContent = noConfirm.noLabelDuring;
       if (noConfirm.yesLabelDuring) yesBtn.textContent = noConfirm.yesLabelDuring;
       yesBtn.classList.add("isReady");
     }
 
     function setTaunt(text) {
       taunt.textContent = text;
-    }
-    function nextTaunt() {
-      tauntsUsed = true;
-      tauntIndex = (tauntIndex + 1) % taunts.length;
-      setTaunt(taunts[tauntIndex]);
     }
 
     function distanceToCenter(el, x, y) {
@@ -2169,17 +2176,30 @@
     function dodge(el, which) {
       const s = state[which];
       if (!enabled || s.ready) return;
+
+      s.dodges += 1;
+      tauntsUsed = true;
+
+      // Show the next taunt ON the button itself.
+      if (which === "yes") {
+        el.textContent = yesTaunts[yesTauntIdx % yesTaunts.length];
+        yesTauntIdx++;
+      } else {
+        el.textContent = noTaunts[noTauntIdx % noTaunts.length];
+        noTauntIdx++;
+      }
+
+      // If that was the last dodge, settle on the final taunt.
       if (s.dodges >= s.max) {
         s.ready = true;
         el.classList.add("isReady");
-        setTaunt(which === "yes" ? "Okay okay — click me 😌" : "Alright, you can click me now." );
+        // Button text stays as the last taunt shown above.
+        // Show the joke in the bottom taunt once the first button stops.
+        if (readyJoke) setTaunt(readyJoke);
         el.style.setProperty("--tx", "0px");
         el.style.setProperty("--ty", "0px");
         return;
       }
-
-      s.dodges += 1;
-      nextTaunt();
 
       const zoneRect = zone.getBoundingClientRect();
       const elRect = el.getBoundingClientRect();
@@ -2220,7 +2240,7 @@
 
     yesBtn.addEventListener("click", () => {
       if (!state.yes.ready && enabled) {
-        setTaunt("Nice try 😌");
+        yesBtn.textContent = "Nice try 😌";
         return;
       }
       window.location.href = q?.yesHref || "yes.html";
@@ -2229,7 +2249,7 @@
     noBtn.addEventListener("click", () => {
       if (!cfg.allowNo) return;
       if (!state.no.ready && enabled) {
-        setTaunt("Not yet 😅");
+        noBtn.textContent = "Not yet 😅";
         return;
       }
 
@@ -2241,7 +2261,7 @@
       }
 
       if (confirmPrompts.length) {
-        setTaunt(noConfirm.finalNoTaunt || "Okay 💛");
+        noBtn.textContent = noConfirm.finalNoTaunt || "Okay 💛";
         // small delay feels nicer
         setTimeout(() => {
           window.location.href = q?.noHref || "no.html";
@@ -2258,13 +2278,40 @@
 
     // Load taunts/prompts from text files (if provided)
     // Only override before the user starts interacting, to avoid mid-run changes.
+    // Per-button taunts files (highest priority).
+    // Helper: update taunts + auto-set dodge count to match.
+    function applyTaunts(which, lines) {
+      if (which === "yes") {
+        yesTaunts = lines;
+        state.yes.max = lines.length;
+        if (state.yes.dodges >= state.yes.max) { state.yes.ready = true; }
+      } else {
+        noTaunts = lines;
+        state.no.max = lines.length;
+        if (state.no.dodges >= state.no.max) { state.no.ready = true; }
+      }
+    }
+
+    const yesTauntsFile = chaseCfg.yesTauntsFile;
+    if (typeof yesTauntsFile === "string" && yesTauntsFile.length) {
+      loadLinesFile(yesTauntsFile)
+        .then((lines) => { if (!tauntsUsed && lines.length) applyTaunts("yes", lines); })
+        .catch(() => {});
+    }
+    const noTauntsFile = chaseCfg.noTauntsFile;
+    if (typeof noTauntsFile === "string" && noTauntsFile.length) {
+      loadLinesFile(noTauntsFile)
+        .then((lines) => { if (!tauntsUsed && lines.length) applyTaunts("no", lines); })
+        .catch(() => {});
+    }
+    // Shared fallback taunts file (only fills in if per-button files aren't set).
     const tauntsFile = chaseCfg.tauntsFile;
     if (typeof tauntsFile === "string" && tauntsFile.length) {
       loadLinesFile(tauntsFile)
         .then((lines) => {
           if (!tauntsUsed && Array.isArray(lines) && lines.length) {
-            taunts = lines;
-            tauntIndex = 0;
+            if (!yesTauntsFile) applyTaunts("yes", lines);
+            if (!noTauntsFile) applyTaunts("no", lines);
           }
         })
         .catch(() => {});
