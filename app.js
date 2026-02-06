@@ -1192,67 +1192,83 @@
 
           const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-          const bestCandidatePointPx = (w, h, extentX, extentY, radius) => {
+          const bestCandidatePointPx = (w, h, extentX, extentY) => {
             const edgePad = 12;
+            const gap = scatterGapPx;
             const halfW = (w * spread) / 2;
             const halfH = (h * spread) / 2;
             const maxX = Math.max(0, halfW - extentX - edgePad);
             const maxY = Math.max(0, halfH - extentY - edgePad);
             if (maxX === 0 && maxY === 0) return { x: 0, y: 0 };
 
+            // Evaluate via axis-aligned rectangle overlap (+ gap) — no circular fudging.
             const evaluate = (x, y) => {
-              // Minimize overlap area with already-placed rectangles.
               let overlapArea = 0;
-              let minGap = Infinity;
+              let minRectGap = Infinity; // smallest edge-to-edge gap (negative = overlap)
 
               for (const p of placed) {
+                // Required separations along each axis (half-widths + gap).
+                const sepX = extentX + p.extentX + gap;
+                const sepY = extentY + p.extentY + gap;
                 const dx = Math.abs(x - p.x);
                 const dy = Math.abs(y - p.y);
-                const ox = (extentX + p.extentX) - dx;
-                const oy = (extentY + p.extentY) - dy;
-                if (ox > 0 && oy > 0) overlapArea += ox * oy;
-
-                const d = Math.hypot(x - p.x, y - p.y);
-                const allowed = (radius + p.radius) * 0.82;
-                const gap = d - allowed;
-                if (gap < minGap) minGap = gap;
+                const penX = sepX - dx; // >0 means overlapping on X
+                const penY = sepY - dy;
+                if (penX > 0 && penY > 0) {
+                  overlapArea += penX * penY;
+                }
+                // Rectangular gap: how far apart the nearest edges are.
+                const gapX = dx - (extentX + p.extentX);
+                const gapY = dy - (extentY + p.extentY);
+                const rectGap = (gapX >= 0 || gapY >= 0) ? Math.max(gapX, gapY) : Math.max(gapX, gapY);
+                if (rectGap < minRectGap) minRectGap = rectGap;
               }
 
-              if (!placed.length) minGap = 999;
+              if (!placed.length) minRectGap = 999;
+              // Encourage using the full stage area.
               const spreadiness = ((Math.abs(x) / (maxX || 1)) + (Math.abs(y) / (maxY || 1))) / 2;
-              return { overlapArea, minGap, spreadiness };
+              return { overlapArea, minRectGap, spreadiness };
             };
 
-            let best = { x: 0, y: 0, overlapArea: Infinity, minGap: -Infinity, spreadiness: -Infinity };
+            let best = { x: 0, y: 0, overlapArea: Infinity, minRectGap: -Infinity, spreadiness: -Infinity };
 
             const tryCandidate = (x, y) => {
               const e = evaluate(x, y);
-              const betterOverlap = e.overlapArea < best.overlapArea - 1;
-              const sameOverlap = Math.abs(e.overlapArea - best.overlapArea) <= 1;
-              const betterGap = e.minGap > best.minGap + 0.5;
-              const sameGap = Math.abs(e.minGap - best.minGap) <= 0.5;
-              const betterSpread = e.spreadiness > best.spreadiness + 0.02;
-              if (betterOverlap || (sameOverlap && (betterGap || (sameGap && betterSpread)))) {
+              // Primary: least overlap.  Secondary: biggest gap.  Tertiary: best spread.
+              if (e.overlapArea < best.overlapArea - 1) {
+                best = { x, y, ...e }; return;
+              }
+              if (e.overlapArea > best.overlapArea + 1) return;
+              // Same overlap band → prefer bigger gap.
+              if (e.minRectGap > best.minRectGap + 0.5) {
+                best = { x, y, ...e }; return;
+              }
+              if (e.minRectGap < best.minRectGap - 0.5) return;
+              // Same gap band → prefer more spread.
+              if (e.spreadiness > best.spreadiness + 0.02) {
                 best = { x, y, ...e };
               }
             };
 
-            // Mix of grid-ish and random candidates to fill whitespace.
-            const grid = [-1, -0.66, -0.33, 0, 0.33, 0.66, 1];
-            for (const gx of grid) {
-              for (const gy of grid) {
-                tryCandidate(gx * maxX, gy * maxY);
+            // Dense grid candidates (11×11 = 121).
+            const steps = 11;
+            for (let gi = 0; gi < steps; gi++) {
+              for (let gj = 0; gj < steps; gj++) {
+                const fx = (gi / (steps - 1)) * 2 - 1;
+                const fy = (gj / (steps - 1)) * 2 - 1;
+                tryCandidate(fx * maxX, fy * maxY);
               }
             }
 
-            const tries = 140;
+            // Extra random candidates.
+            const tries = 300;
             for (let k = 0; k < tries; k++) {
               const x = (rng() * 2 - 1) * maxX;
               const y = (rng() * 2 - 1) * maxY;
               tryCandidate(x, y);
             }
 
-            placed.push({ x: best.x, y: best.y, extentX, extentY, radius });
+            placed.push({ x: best.x, y: best.y, extentX, extentY });
             return { x: best.x, y: best.y };
           };
 
@@ -1330,15 +1346,9 @@
                   : null;
           const scatterHeightFrac = typeof scatterHeightFracRaw === "number" ? clamp(scatterHeightFracRaw, 0.12, 0.9) : null;
 
-          const landscapeRatioFactorRaw = typeof gcfg.landscapeRatioFactor === "number" ? gcfg.landscapeRatioFactor : 0.8;
-          const landscapeRatioFactor = clamp(landscapeRatioFactorRaw, 0.4, 1.0);
-
-          const effectiveRatio = (iw, ih) => {
-            const raw = Math.max(0.2, Math.min(5, (iw || 4) / (ih || 3)));
-            if (raw <= 1) return raw;
-            // Compress only the extra width beyond square.
-            return 1 + (raw - 1) * landscapeRatioFactor;
-          };
+          const landscapeRatioFactorRaw = typeof gcfg.landscapeRatioFactor === "number" ? gcfg.landscapeRatioFactor : 0.75;
+          const landscapeRatioFactor = clamp(landscapeRatioFactorRaw, 0.3, 1.0);
+          const scatterGapPx = typeof gcfg.scatterGapPx === "number" ? Math.max(0, gcfg.scatterGapPx) : 6;
 
           galleries.push({
             trackEl: track,
@@ -1357,14 +1367,14 @@
                  if (scatterHeightPx != null || scatterHeightFrac != null) {
                    // Size each frame so its total height is ~ (scatterHeight),
                    // then derive width from the image ratio.
-                   const targetFigH = scatterHeightPx != null ? scatterHeightPx : (h * scatterHeightFrac);
+                   const baseTargetH = scatterHeightPx != null ? scatterHeightPx : (h * scatterHeightFrac);
                    for (const m of metas) {
                      const iw = m.img.naturalWidth || 4;
                      const ih = m.img.naturalHeight || 3;
-                     const ratio = effectiveRatio(iw, ih);
+                     const ratio = Math.max(0.2, Math.min(5, iw / ih));
+                     // Landscape photos get a reduced target height so they don't dominate.
+                     const targetFigH = ratio > 1 ? baseTargetH * landscapeRatioFactor : baseTargetH;
 
-                     // Want: (figW - padX) / ratio + padY ~= targetFigH
-                     // Solve: figW ~= (targetFigH - padY) * ratio + padX
                      const figWFromH = (targetFigH - framePadY) * ratio + framePadX;
                      const figW = Math.max(120, Math.min(figWFromH, w * 0.62));
                      const figH = Math.max(120, Math.min(((figW - framePadX) / ratio) + framePadY, h * 0.88));
@@ -1384,7 +1394,7 @@
                    for (const m of metas) {
                      const iw = m.img.naturalWidth || 4;
                      const ih = m.img.naturalHeight || 3;
-                     const ratio = effectiveRatio(iw, ih);
+                     const ratio = Math.max(0.2, Math.min(5, iw / ih));
 
                      // Solve for k such that (mediaW+padX)*(mediaH+padY) ~= targetFrameArea,
                      // with mediaW = k*sqrt(ratio), mediaH = k/sqrt(ratio).
@@ -1415,10 +1425,9 @@
                  // Place largest first to reduce center clumping.
                  const metasBySize = [...metas].sort((a, b) => (b.width * b.height) - (a.width * a.height));
                  for (const m of metasBySize) {
-                   const extentX = Math.max(70, m.width / 2);
-                   const extentY = Math.max(70, m.height / 2);
-                   const radius = Math.max(extentX, extentY);
-                   const pt = bestCandidatePointPx(w, h, extentX, extentY, radius);
+                   const extentX = m.width / 2;
+                   const extentY = m.height / 2;
+                   const pt = bestCandidatePointPx(w, h, extentX, extentY);
                    m.x = pt.x;
                    m.y = pt.y;
                  }

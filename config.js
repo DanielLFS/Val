@@ -162,10 +162,11 @@ window.VAL_CONFIG = {
             //    - <=1 means fraction of stage height (e.g. 0.30)
             //    - >1 means pixels (e.g. 280)
             scatterSize: 0.3,
-            // If a photo is landscape (w > h), compress its effective aspect ratio
-            // so it doesn't get *too* wide.
-            // 1.0 = no change, 0.8 = 80% of the extra width beyond square.
-            landscapeRatioFactor: 0.2,
+            // Landscape photos: fraction of portrait target height to use.
+            // 1.0 = same height as portrait (very wide), 0.7 = 70% height.
+            landscapeRatioFactor: 0.75,
+            // Minimum gap (px) between scattered frames (prevents overlap).
+            scatterGapPx: 6,
             columns: 3,
             // Randomize order (default is true if omitted).
             // - randomizeMode: "random" reshuffles each load, "stable" keeps a consistent order.
