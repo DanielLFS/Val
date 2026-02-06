@@ -188,8 +188,8 @@ body {
 .media img {
   display: block;
   width: 100%;
-  height: auto;
-  object-fit: contain;
+  height: min(50vh, 500px);
+  object-fit: cover;
 }
 
 .body {
