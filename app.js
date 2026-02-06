@@ -1311,13 +1311,34 @@
           const appearScaleRaw = typeof gcfg.appearScale === "number" ? gcfg.appearScale : 1.65;
           const appearScale = clamp(appearScaleRaw, 1.0, 6.0);
 
-          const targetHeightFracRaw =
-            typeof gcfg.targetHeightFrac === "number"
-              ? gcfg.targetHeightFrac
-              : typeof gcfg.targetHeightPercent === "number"
-                ? gcfg.targetHeightPercent / 100
-                : null;
-          const targetHeightFrac = typeof targetHeightFracRaw === "number" ? clamp(targetHeightFracRaw, 0.12, 0.9) : null;
+          // Deterministic sizing knobs
+          // - `appearScale`: how big each polaroid appears before shrinking to its scattered size
+          // - `scatterSize`: ONE knob for scattered size. If <=1 => fraction of stage height. If >1 => px.
+          // Back-compat: `targetHeightFrac` / `targetHeightPercent`.
+          const scatterSizeRaw = typeof gcfg.scatterSize === "number" ? gcfg.scatterSize : null;
+          const scatterHeightPx =
+            typeof scatterSizeRaw === "number" && scatterSizeRaw > 1
+              ? clamp(scatterSizeRaw, 140, 1200)
+              : null;
+          const scatterHeightFracRaw =
+            typeof scatterSizeRaw === "number" && scatterSizeRaw > 0 && scatterSizeRaw <= 1
+              ? scatterSizeRaw
+              : typeof gcfg.targetHeightFrac === "number"
+                ? gcfg.targetHeightFrac
+                : typeof gcfg.targetHeightPercent === "number"
+                  ? gcfg.targetHeightPercent / 100
+                  : null;
+          const scatterHeightFrac = typeof scatterHeightFracRaw === "number" ? clamp(scatterHeightFracRaw, 0.12, 0.9) : null;
+
+          const landscapeRatioFactorRaw = typeof gcfg.landscapeRatioFactor === "number" ? gcfg.landscapeRatioFactor : 0.8;
+          const landscapeRatioFactor = clamp(landscapeRatioFactorRaw, 0.4, 1.0);
+
+          const effectiveRatio = (iw, ih) => {
+            const raw = Math.max(0.2, Math.min(5, (iw || 4) / (ih || 3)));
+            if (raw <= 1) return raw;
+            // Compress only the extra width beyond square.
+            return 1 + (raw - 1) * landscapeRatioFactor;
+          };
 
           galleries.push({
             trackEl: track,
@@ -1330,27 +1351,30 @@
               const h = stage.clientHeight || 1;
 
                if (!laidOut && w > 20 && h > 20) {
-                 const framePadX = 24; // matches .finalItem left+right padding
-                 const framePadY = 34; // top padding + thicker bottom polaroid strip
+                 const framePadX = 24; // approx: frame padding + border
+                 const framePadY = 34; // approx: top padding + thicker bottom strip
 
-                 if (targetHeightFrac != null) {
-                   // Size each frame so its total height is ~ (targetHeightFrac * stageHeight),
+                 if (scatterHeightPx != null || scatterHeightFrac != null) {
+                   // Size each frame so its total height is ~ (scatterHeight),
                    // then derive width from the image ratio.
-                   const targetFigH = h * targetHeightFrac;
+                   const targetFigH = scatterHeightPx != null ? scatterHeightPx : (h * scatterHeightFrac);
                    for (const m of metas) {
                      const iw = m.img.naturalWidth || 4;
                      const ih = m.img.naturalHeight || 3;
-                     const ratio = Math.max(0.2, Math.min(5, iw / ih));
+                     const ratio = effectiveRatio(iw, ih);
 
                      // Want: (figW - padX) / ratio + padY ~= targetFigH
                      // Solve: figW ~= (targetFigH - padY) * ratio + padX
                      const figWFromH = (targetFigH - framePadY) * ratio + framePadX;
-                     const figW = Math.max(120, Math.min(figWFromH, w * 0.72));
+                     const figW = Math.max(120, Math.min(figWFromH, w * 0.62));
                      const figH = Math.max(120, Math.min(((figW - framePadX) / ratio) + framePadY, h * 0.88));
 
                      m.width = figW;
                      m.height = figH;
                      m.el.style.width = `${figW.toFixed(1)}px`;
+                     m.el.style.height = `${figH.toFixed(1)}px`;
+                     m.media.style.height = `${Math.max(80, figH - framePadY).toFixed(1)}px`;
+                     m.media.style.aspectRatio = "auto";
                    }
                  } else {
                    // Target: each photo roughly covers stageArea/targetCount.
@@ -1360,7 +1384,7 @@
                    for (const m of metas) {
                      const iw = m.img.naturalWidth || 4;
                      const ih = m.img.naturalHeight || 3;
-                     const ratio = iw / ih;
+                     const ratio = effectiveRatio(iw, ih);
 
                      // Solve for k such that (mediaW+padX)*(mediaH+padY) ~= targetFrameArea,
                      // with mediaW = k*sqrt(ratio), mediaH = k/sqrt(ratio).
@@ -1382,6 +1406,9 @@
                      m.width = figW;
                      m.height = figH;
                      m.el.style.width = `${figW.toFixed(1)}px`;
+                     m.el.style.height = `${figH.toFixed(1)}px`;
+                     m.media.style.height = `${Math.max(80, figH - framePadY).toFixed(1)}px`;
+                     m.media.style.aspectRatio = "auto";
                    }
                  }
 

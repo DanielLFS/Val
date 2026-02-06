@@ -156,9 +156,16 @@ window.VAL_CONFIG = {
             spread: 0.95,
             targetCount: 40,
             appearScale: 2.5,
-            // Alternative sizing: make each polaroid frame height ~ % of the stage height.
-            // (When set, this overrides targetCount sizing in "final" mode.)
-            targetHeightFrac: 0.3,
+            // Deterministic sizing knobs:
+            // - `appearScale`: how big they pop in before shrinking
+            // - `scatterSize`: ONE knob for scattered size
+            //    - <=1 means fraction of stage height (e.g. 0.30)
+            //    - >1 means pixels (e.g. 280)
+            scatterSize: 0.3,
+            // If a photo is landscape (w > h), compress its effective aspect ratio
+            // so it doesn't get *too* wide.
+            // 1.0 = no change, 0.8 = 80% of the extra width beyond square.
+            landscapeRatioFactor: 0.8,
             columns: 3,
             // Randomize order (default is true if omitted).
             // - randomizeMode: "random" reshuffles each load, "stable" keeps a consistent order.
