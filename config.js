@@ -196,6 +196,20 @@ window.VAL_CONFIG = {
         ],
         label: "I have a question →",
         href: "question.html",
+        // Optional mini-game: hide the CTA button under a fog that only clears near the cursor.
+        hunt: {
+          enabled: true,
+          // Radius of the visible "flashlight" area.
+          revealRadiusPx: 90,
+          // How close you need to get to reveal + enable the button.
+          foundRadiusPx: 70,
+          // How tall the fog sits at the bottom of the card.
+          fogHeightPx: 240,
+          // 0..1
+          fogOpacity: 0.92,
+          // Small easter egg shown once when found.
+          eggText: "Found it 😌",
+        },
       },
     },
 

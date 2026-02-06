@@ -1706,10 +1706,147 @@
 
       const actions = document.createElement("div");
       actions.className = "actions";
-      actions.appendChild(
-        makeActionLinkButton({ label: story.cta.label || "Next →", href: story.cta.href, variant: "primary" })
-      );
-      chapter.appendChild(actions);
+
+      const ctaBtn = makeActionLinkButton({ label: story.cta.label || "Next →", href: story.cta.href, variant: "primary" });
+
+      const huntCfg = story?.cta?.hunt;
+      const huntEnabled = Boolean(huntCfg?.enabled);
+      const maskSupported =
+        typeof window.CSS !== "undefined" &&
+        typeof window.CSS.supports === "function" &&
+        (window.CSS.supports("-webkit-mask-image: radial-gradient(circle, #000 0, transparent 60px)") ||
+          window.CSS.supports("mask-image: radial-gradient(circle, #000 0, transparent 60px)"));
+      const useHunt = huntEnabled && maskSupported;
+
+      if (useHunt) {
+        // New CTA hunt: a fog overlay with a "flashlight" cutout + a randomly placed hidden button.
+        const huntArea = document.createElement("div");
+        huntArea.className = "ctaHuntArea";
+
+        const fog = document.createElement("div");
+        fog.className = "ctaHuntFog";
+
+        const hint = document.createElement("div");
+        hint.className = "ctaHuntHint";
+        hint.textContent = typeof huntCfg.hintText === "string" && huntCfg.hintText.trim().length
+          ? huntCfg.hintText.trim()
+          : "Psst… use your cursor to find the hidden button.";
+
+        const egg = document.createElement("div");
+        egg.className = "ctaHuntEgg";
+        const eggText = typeof huntCfg.eggText === "string" ? huntCfg.eggText : "";
+        egg.textContent = eggText;
+        if (!eggText) egg.hidden = true;
+
+        // Back-compat for earlier keys
+        const fogHeightPx = typeof huntCfg.fogHeightPx === "number" ? huntCfg.fogHeightPx : 240;
+        const flashlightRadiusPx =
+          typeof huntCfg.flashlightRadiusPx === "number"
+            ? huntCfg.flashlightRadiusPx
+            : (typeof huntCfg.revealRadiusPx === "number" ? huntCfg.revealRadiusPx : 110);
+        const flashlightFeatherPx = typeof huntCfg.flashlightFeatherPx === "number" ? huntCfg.flashlightFeatherPx : 70;
+        const foundRadiusPx = typeof huntCfg.foundRadiusPx === "number" ? huntCfg.foundRadiusPx : 70;
+        const fogOpacity = typeof huntCfg.fogOpacity === "number" ? huntCfg.fogOpacity : 0.92;
+
+        const fogH = Math.max(160, fogHeightPx);
+        const flashR = Math.max(50, flashlightRadiusPx);
+        const flashF = Math.max(30, flashlightFeatherPx);
+        const fogA = Math.max(0.35, Math.min(0.98, fogOpacity));
+
+        huntArea.style.setProperty("--huntFogH", `${fogH}px`);
+        fog.style.setProperty("--huntFogH", `${fogH}px`);
+        fog.style.setProperty("--flashR", `${flashR}px`);
+        fog.style.setProperty("--flashF", `${flashF}px`);
+        fog.style.setProperty("--fogA", String(fogA));
+
+        ctaBtn.classList.add("ctaHuntButton");
+        ctaBtn.disabled = true;
+
+        const btnWrap = document.createElement("div");
+        btnWrap.className = "ctaHuntButtonWrap";
+        btnWrap.appendChild(ctaBtn);
+
+        huntArea.appendChild(hint);
+        huntArea.appendChild(btnWrap);
+        huntArea.appendChild(fog);
+        huntArea.appendChild(egg);
+        chapter.appendChild(huntArea);
+
+        let raf = 0;
+        let lastX = 0;
+        let lastY = 0;
+        let found = false;
+        let eggShown = false;
+
+        const updateFog = () => {
+          raf = 0;
+          const rect = huntArea.getBoundingClientRect();
+          const x = lastX - rect.left;
+          const y = lastY - rect.top;
+          fog.style.setProperty("--fx", `${x.toFixed(1)}px`);
+          fog.style.setProperty("--fy", `${y.toFixed(1)}px`);
+
+          const b = ctaBtn.getBoundingClientRect();
+          const cx = b.left + b.width / 2;
+          const cy = b.top + b.height / 2;
+          const d = Math.hypot(lastX - cx, lastY - cy);
+          const nowFound = d <= Math.max(26, foundRadiusPx);
+          if (nowFound !== found) {
+            found = nowFound;
+            huntArea.classList.toggle("isFound", found);
+            ctaBtn.disabled = !found;
+            if (found && eggText && !eggShown) {
+              eggShown = true;
+              egg.hidden = false;
+              egg.classList.add("isShown");
+              setTimeout(() => egg.classList.remove("isShown"), 2200);
+            }
+          }
+        };
+
+        const onMove = (evt) => {
+          lastX = evt.clientX;
+          lastY = evt.clientY;
+          if (!raf) raf = requestAnimationFrame(updateFog);
+        };
+
+        const placeButton = () => {
+          const rect = huntArea.getBoundingClientRect();
+          const bw = ctaBtn.offsetWidth || 160;
+          const bh = ctaBtn.offsetHeight || 44;
+          const pad = typeof huntCfg.buttonPaddingPx === "number" ? huntCfg.buttonPaddingPx : 18;
+
+          const minX = pad;
+          const maxX = Math.max(minX, rect.width - bw - pad);
+
+          // Constrain to the fog band
+          const bandTop = Math.max(0, rect.height - fogH + 12);
+          const minY = bandTop;
+          const maxY = Math.max(minY, rect.height - bh - pad);
+
+          const rx = minX + Math.random() * Math.max(1, (maxX - minX));
+          const ry = minY + Math.random() * Math.max(1, (maxY - minY));
+          btnWrap.style.left = `${rx.toFixed(1)}px`;
+          btnWrap.style.top = `${ry.toFixed(1)}px`;
+        };
+
+        const init = () => {
+          placeButton();
+          const r = huntArea.getBoundingClientRect();
+          lastX = r.left + r.width * 0.1;
+          lastY = r.top + r.height * 0.35;
+          updateFog();
+        };
+
+        huntArea.addEventListener("pointermove", onMove);
+        huntArea.addEventListener("pointerdown", onMove);
+        window.addEventListener("resize", init);
+        // Defer until layout is stable
+        setTimeout(init, 0);
+      } else {
+        actions.appendChild(ctaBtn);
+        chapter.appendChild(actions);
+      }
 
       sticky.appendChild(chapter);
       ctaTrack.appendChild(sticky);
